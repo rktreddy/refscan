@@ -5,6 +5,25 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-04-24
+
+### Added
+- **`refscan watch`** — file watcher for active drafting. Polls
+  ``paper/sections/*.tex`` (and ``main.tex`` if present) at a configurable
+  interval; whenever a file's mtime changes, re-runs the plagiarism scan and
+  prints a compact terminal summary (top-N matches with score, run length,
+  reference, and shingle preview). Stdlib-only — no ``watchdog`` dependency.
+- ``scan.render_findings_terminal(result, top_n, width)`` — single-line-per-
+  finding summary suitable for terminal display.
+
+### CLI
+- New: ``refscan watch <paper_dir> [--interval N] [--top N] [--shingle-n N]
+  [--min-run M]``. Default interval 1s, default top 5.
+
+### Tests
+- 3 new tests for the terminal renderer (no-findings, with-findings,
+  top-N capping). Total: 65 passing.
+
 ## [0.5.0] — 2026-04-24
 
 ### Added

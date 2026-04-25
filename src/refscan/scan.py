@@ -224,6 +224,30 @@ def scan(
     }
 
 
+def render_findings_terminal(result: dict, top_n: int = 5,
+                                width: int = 80) -> str:
+    """Compact terminal summary: one line per top-N finding. No markdown."""
+    findings = result["findings"]
+    n_refs = len(result["refs_indexed"])
+    n_failed = len(result["refs_failed"])
+    lines = [
+        f"  refs indexed: {n_refs}  |  failed: {n_failed}  |  findings: {len(findings)}",
+    ]
+    if not findings:
+        lines.append("  ✓ no matches above noise threshold")
+        return "\n".join(lines)
+    lines.append(f"  top {min(top_n, len(findings))} by confidence:")
+    for i, f in enumerate(findings[:top_n], 1):
+        # Truncate shingle to fit on one line
+        sh = f["shingle"]
+        max_sh = max(20, width - 50)
+        if len(sh) > max_sh:
+            sh = sh[:max_sh - 1] + "…"
+        lines.append(f"    {i}. {f['score']:.2f} | {f['run_len']:>2}w | "
+                     f"{f['bibkey'][:18]:<18} | {f['section'][:18]:<18} | {sh}")
+    return "\n".join(lines)
+
+
 def _reference_context(ref_toks: list[str], run: list[str], window: int = 5) -> str:
     run_tuple = tuple(run)
     n = len(run_tuple)

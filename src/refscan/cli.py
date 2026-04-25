@@ -12,7 +12,13 @@ from .bib import parse_bib
 from .fetch import ARXIV_DELAY_S, fetch_entry
 from .overlap import detect_overlap, render_overlap_md
 from .sanity import render_sanity_md, run_sanity, summarize
-from .scan import DEFAULT_MIN_RUN, DEFAULT_SHINGLE_N, render_findings_md, scan
+from .scan import (
+    DEFAULT_MIN_RUN,
+    DEFAULT_SHINGLE_N,
+    render_findings_md,
+    render_findings_terminal,
+    scan,
+)
 from .track import generate_tracking_md
 from .verify import render_verification_md, verify_paper
 
@@ -148,6 +154,66 @@ def cmd_sanity(args: argparse.Namespace) -> int:
     return 1 if counts["error"] > 0 else 0
 
 
+def _watched_files(paper_dir: Path) -> list[Path]:
+    files = sorted((paper_dir / "paper" / "sections").glob("*.tex"))
+    main_tex = paper_dir / "paper" / "main.tex"
+    if main_tex.exists():
+        files.append(main_tex)
+    return files
+
+
+def cmd_watch(args: argparse.Namespace) -> int:
+    paper_dir = Path(args.paper_dir).resolve()
+    sections = paper_dir / "paper" / "sections"
+    refs = paper_dir / "literature" / "refs"
+    if not sections.is_dir():
+        print(f"error: no sections dir at {sections}", file=sys.stderr)
+        return 1
+    if not refs.is_dir():
+        print(f"error: no refs dir at {refs}", file=sys.stderr)
+        return 1
+
+    print(f"refscan watch: {paper_dir.name}", flush=True)
+    print(f"  watching: {sections}/*.tex", flush=True)
+    print(f"  poll interval: {args.interval}s", flush=True)
+    print(f"  showing: top {args.top} matches per scan", flush=True)
+    print("  press Ctrl-C to stop\n", flush=True)
+
+    def _scan_and_print(label: str) -> None:
+        ts = dt.datetime.now().strftime("%H:%M:%S")
+        print(f"[{ts}] {label}", flush=True)
+        result = scan(
+            sections_dir=sections, refs_dir=refs,
+            shingle_n=args.shingle_n, min_run=args.min_run,
+        )
+        print(render_findings_terminal(result, top_n=args.top), flush=True)
+        print(flush=True)
+
+    last_mtimes = {f: f.stat().st_mtime for f in _watched_files(paper_dir)}
+    _scan_and_print("initial scan")
+
+    try:
+        while True:
+            time.sleep(args.interval)
+            current = {f: f.stat().st_mtime for f in _watched_files(paper_dir)}
+            changed = []
+            for f, mt in current.items():
+                if f not in last_mtimes or mt > last_mtimes[f]:
+                    changed.append(f)
+            removed = [f for f in last_mtimes if f not in current]
+            if changed or removed:
+                last_mtimes = current
+                desc_parts = []
+                if changed:
+                    desc_parts.append("changed: " + ", ".join(c.name for c in changed))
+                if removed:
+                    desc_parts.append("removed: " + ", ".join(r.name for r in removed))
+                _scan_and_print(" | ".join(desc_parts))
+    except KeyboardInterrupt:
+        print("\nstopped.")
+        return 0
+
+
 def cmd_overlap(args: argparse.Namespace) -> int:
     paper_dirs = [Path(p).resolve() for p in args.paper_dirs]
     sections = {p.name: p / "paper" / "sections" for p in paper_dirs}
@@ -210,6 +276,18 @@ def build_parser() -> argparse.ArgumentParser:
     pn.add_argument("paper_dir")
     pn.add_argument("--out", help="output path (default: paper_dir/literature/sanity_report.md)")
     pn.set_defaults(func=cmd_sanity)
+
+    pw = sub.add_parser("watch", help="re-run scan whenever a section .tex file is saved")
+    pw.add_argument("paper_dir")
+    pw.add_argument("--interval", type=float, default=1.0,
+                    help="poll interval in seconds (default: 1.0)")
+    pw.add_argument("--top", type=int, default=5,
+                    help="number of top matches to show per scan (default: 5)")
+    pw.add_argument("--shingle-n", type=int, default=DEFAULT_SHINGLE_N,
+                    help=f"shingle size in tokens (default: {DEFAULT_SHINGLE_N})")
+    pw.add_argument("--min-run", type=int, default=DEFAULT_MIN_RUN,
+                    help=f"minimum run length in tokens (default: {DEFAULT_MIN_RUN})")
+    pw.set_defaults(func=cmd_watch)
 
     po = sub.add_parser("overlap", help="cross-paper overlap scan across 2+ papers")
     po.add_argument("paper_dirs", nargs="+")

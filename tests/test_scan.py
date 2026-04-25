@@ -1,7 +1,12 @@
 """Tests for scan runs and finding generation."""
 from __future__ import annotations
 
-from refscan.scan import confidence_score, find_runs, is_generic_shingle
+from refscan.scan import (
+    confidence_score,
+    find_runs,
+    is_generic_shingle,
+    render_findings_terminal,
+)
 
 
 def test_find_runs_exact_match() -> None:
@@ -69,3 +74,48 @@ def test_confidence_score_pure_stopwords_zero_signal() -> None:
     # All-stopwords shingle should have very low score (non_stop_frac == 0)
     s = confidence_score("the of and", 3, 1)
     assert s == 0.0
+
+
+def test_render_findings_terminal_no_findings() -> None:
+    result = {"findings": [], "refs_indexed": ["a", "b", "c"], "refs_failed": []}
+    out = render_findings_terminal(result)
+    assert "no matches" in out
+    assert "refs indexed: 3" in out
+
+
+def test_render_findings_terminal_with_findings() -> None:
+    result = {
+        "findings": [
+            {"score": 0.42, "run_len": 8, "bibkey": "Foo2020",
+             "section": "intro.tex",
+             "shingle": "neural ordinary differential equation adjoint method here"},
+            {"score": 0.35, "run_len": 6, "bibkey": "Bar2021",
+             "section": "method.tex",
+             "shingle": "the upper bound of theorem"},
+        ],
+        "refs_indexed": ["Foo2020", "Bar2021"],
+        "refs_failed": [],
+    }
+    out = render_findings_terminal(result, top_n=2)
+    assert "findings: 2" in out
+    assert "Foo2020" in out
+    assert "Bar2021" in out
+    assert "0.42" in out
+
+
+def test_render_findings_terminal_top_n_caps() -> None:
+    result = {
+        "findings": [
+            {"score": 0.5 - i * 0.05, "run_len": 6, "bibkey": f"K{i}",
+             "section": "s.tex", "shingle": "shingle text " * 3}
+            for i in range(10)
+        ],
+        "refs_indexed": [f"K{i}" for i in range(10)],
+        "refs_failed": [],
+    }
+    out = render_findings_terminal(result, top_n=3)
+    # Should show 3 numbered entries
+    for n in (1, 2, 3):
+        assert f"{n}." in out
+    # Should not show 4th
+    assert "4." not in out
