@@ -125,6 +125,31 @@ def _index_reference_pdfs(
     return ref_indices, ref_tokens, failed
 
 
+def confidence_score(shingle_text: str, run_len: int, num_refs_with_phrase: int) -> float:
+    """Compute a 0–1 confidence that a finding is concerning rather than noise.
+
+    Three factors:
+      - **Length**: longer runs are stronger signal. Maps run_len→[0.5, 1.0]
+        via a saturating curve (8w gets ~0.7, 12w gets ~0.85, 20w → 1.0).
+      - **Non-stopword density**: shingles dominated by stopwords are weaker.
+        Computed as 1 - (stopword_count / total_words).
+      - **Phrase rarity**: phrases shared by many references are likely
+        technical terminology, not concerning paraphrase. Computed as
+        1 / sqrt(num_refs_with_phrase).
+
+    Returns score in (0, 1]; higher = more concerning.
+    """
+    words = shingle_text.split()
+    n = len(words) or 1
+    stop_n = sum(1 for w in words if w in _STOPWORDS)
+    non_stop_frac = 1.0 - (stop_n / n)
+    # Length factor: 1 - exp(-run_len / 10) gives ~0.55 at 8w, ~0.70 at 12w, ~0.86 at 20w
+    import math
+    length_factor = 1.0 - math.exp(-run_len / 10.0)
+    rarity = 1.0 / math.sqrt(max(1, num_refs_with_phrase))
+    return length_factor * non_stop_frac * rarity
+
+
 def scan(
     sections_dir: Path,
     refs_dir: Path,
@@ -165,7 +190,21 @@ def scan(
                     "ref_context": ref_ctx,
                 })
 
-    findings.sort(key=lambda f: (-f["run_len"], f["section"]))
+    # Compute phrase rarity: how many distinct refs contain each shingle text?
+    # We use a normalized prefix (first 8 tokens) as the phrase key so near-
+    # duplicate runs with shared prefixes get treated as the same phrase.
+    phrase_freq: dict[str, set[str]] = {}
+    for f in findings:
+        prefix = " ".join(f["shingle"].split()[:8])
+        phrase_freq.setdefault(prefix, set()).add(f["bibkey"])
+
+    # Annotate each finding with its confidence score.
+    for f in findings:
+        prefix = " ".join(f["shingle"].split()[:8])
+        f["score"] = confidence_score(f["shingle"], f["run_len"], len(phrase_freq[prefix]))
+
+    # Sort by score descending; tie-break by run_len then section name.
+    findings.sort(key=lambda f: (-f["score"], -f["run_len"], f["section"]))
     # Deduplicate adjacent overlapping shingles
     seen = set()
     dedup = []
@@ -221,6 +260,11 @@ def render_findings_md(
         "- **Quoted theorem statements or definitions** with proper attribution are fine.\n"
         "- **Author/venue names and citation clusters** are noise.\n"
         "- **Concern-worthy**: a 10+ word run of paraphrase that tracks the source's sentence structure closely.\n\n"
+        "Each finding is annotated with a **confidence score** (0.0–1.0) "
+        "combining run length, non-stopword density, and phrase rarity across "
+        "your reference corpus. Higher = more likely a real concern. Findings "
+        "are sorted by score; the **Top concerning matches** section surfaces "
+        "the highest-score finding overall so you can review it first.\n\n"
     )
 
     if result["refs_failed"]:
@@ -234,17 +278,32 @@ def render_findings_md(
         out.append("## ✅ No matches found above the noise threshold.\n\n")
         return "".join(out)
 
+    # Top concerning matches across all references (top 10 or fewer)
+    top_n = min(10, len(findings))
+    out.append(f"## 🔝 Top {top_n} concerning matches (highest confidence)\n\n")
+    out.append("| # | Score | Words | Reference | Section | Shingle (first 80 chars) |\n")
+    out.append("|---|------:|------:|-----------|---------|--------------------------|\n")
+    for i, f in enumerate(findings[:top_n], 1):
+        sh_short = f['shingle'][:80] + ("…" if len(f['shingle']) > 80 else "")
+        out.append(f"| {i} | {f['score']:.2f} | {f['run_len']} | "
+                   f"`{f['bibkey']}` | `{f['section']}` | {sh_short} |\n")
+    out.append("\n")
+
     by_ref: dict[str, list[dict]] = defaultdict(list)
     for f in findings:
         by_ref[f["bibkey"]].append(f)
-    ref_order = sorted(by_ref.keys(), key=lambda k: -max(f["run_len"] for f in by_ref[k]))
-    out.append("## Findings\n\n")
-    out.append("Grouped by cited reference, ranked by longest match.\n\n")
+    # Sort references by max score (not max run_len) — more useful prioritization.
+    ref_order = sorted(by_ref.keys(), key=lambda k: -max(f["score"] for f in by_ref[k]))
+    out.append("## All findings, grouped by cited reference\n\n")
+    out.append("Ranked by max confidence score within each reference.\n\n")
     for bibkey in ref_order:
-        fs = sorted(by_ref[bibkey], key=lambda x: -x["run_len"])
-        out.append(f"### `{bibkey}` — {len(fs)} matches, longest = {fs[0]['run_len']} words\n\n")
+        fs = sorted(by_ref[bibkey], key=lambda x: -x["score"])
+        out.append(f"### `{bibkey}` — {len(fs)} matches, "
+                   f"max score = {fs[0]['score']:.2f}, "
+                   f"longest = {max(f['run_len'] for f in fs)} words\n\n")
         for f in fs[:max_runs_per_ref]:
-            out.append(f"**{f['run_len']} words** (section `{f['section']}`):\n\n")
+            out.append(f"**score {f['score']:.2f}** | **{f['run_len']} words** "
+                       f"(section `{f['section']}`):\n\n")
             out.append(f"- Paper: …{f['paper_context']}…\n")
             out.append(f"- Ref:   …{f['ref_context']}…\n\n")
         if len(fs) > max_runs_per_ref:

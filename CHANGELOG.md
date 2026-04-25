@@ -5,6 +5,36 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-04-24
+
+### Added
+- ``scan.confidence_score(shingle_text, run_len, num_refs_with_phrase)`` — a
+  0–1 score combining three factors:
+  - **Length**: longer runs are stronger signal
+    (``1 - exp(-run_len / 10)``).
+  - **Non-stopword density**: shingles dominated by stopwords are noise.
+  - **Phrase rarity**: phrases shared by many references in the cited corpus
+    are likely technical terminology, not concerning paraphrase
+    (``1 / sqrt(num_refs_with_phrase)``).
+- Each plagiarism finding is now annotated with its score and findings are
+  sorted by score (descending) instead of run length.
+- New **🔝 Top N concerning matches** section at the top of every
+  ``plagiarism_findings.md`` report — surfaces the highest-confidence matches
+  in a compact table (#, score, words, ref, section, shingle) for quick
+  triage. Default N = 10.
+- Per-reference grouping now sorts by max score within the reference and
+  shows the score for every listed match.
+
+### Changed
+- ``scan.scan()`` now computes per-finding scores and sorts findings by
+  ``-score, -run_len, section`` instead of ``-run_len, section``.
+- Report headings updated to explain the new score model.
+
+### Tests
+- 5 new tests for ``confidence_score``: length effect, stopword penalty,
+  rarity penalty, [0, 1] bound, all-stopword zero-signal edge case. Total: 50
+  passing.
+
 ## [0.3.0] — 2026-04-24
 
 ### Added
