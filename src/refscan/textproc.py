@@ -51,18 +51,57 @@ def normalize_prose(text: str) -> str:
 
 
 def repair_letter_spacing(text: str) -> str:
-    """Rejoin letter-spaced fragments (``d ifferentiable`` → ``differentiable``).
+    """Rejoin letter-spaced fragments produced by pdftotext.
 
-    PDF rendering often sets titles with letter-spacing, which pdftotext
-    preserves as ``\\w \\w \\w ...`` runs. This heuristic merges runs of four or
-    more consecutive single-letter tokens back into a single word.
+    Handles **long single-letter runs** like "d i f f e r e n t i a b l e" →
+    "differentiable", which appear when pdftotext extracts text rendered with
+    aggressive letter-spacing.
+
+    Conservative by design — requires 4+ consecutive single-letter tokens, so
+    legitimate prose like "I am here" and math formulas like "a b c" are not
+    corrupted.
+
+    For partial-word patterns where each word's first letter is detached
+    (e.g. "D IFFERENTIABLE A RCHITECTURE S EARCH" or "A N I MAGE IS W ORTH"),
+    use ``title_word_match`` instead — it falls back to substring matching
+    against the whitespace-collapsed text, which catches these without
+    corruption risk.
     """
-    def merge(m: re.Match) -> str:
+    def _join(m: re.Match) -> str:
         return "".join(m.group(0).split())
 
-    # Require at least 4 single-letter tokens in a row to avoid corrupting
-    # legitimate words like "a b" in formulas.
-    return re.sub(r"(?:\b[a-z]\s){3,}[a-z]\b", merge, text)
+    return re.sub(r"(?:\b[a-z]\s){3,}[a-z]\b", _join, text)
+
+
+def collapse_whitespace(text: str) -> str:
+    """Return ``text`` with all whitespace removed. Useful for substring matching
+    against letter-spaced PDF titles where word boundaries are unreliable."""
+    return re.sub(r"\s+", "", text)
+
+
+def title_word_match(bib_title: str, pdf_text: str,
+                     min_word_len: int = 4) -> float:
+    """Compute robust title-word overlap between bib title and PDF text.
+
+    Strategy:
+      1. Extract significant words (≥ ``min_word_len`` chars) from bib title.
+      2. Apply letter-spacing repair to PDF text (handles pdftotext artifacts).
+      3. For each bib word, accept a hit if either:
+         - the word appears as a token in repaired PDF text, OR
+         - the word appears as a substring in the collapsed (no-whitespace)
+           PDF text (catches cases like "A N I MAGE" containing "image").
+
+    Returns the fraction of bib title words matched.
+    """
+    bib_words = set(re.findall(rf"[a-z]{{{min_word_len},}}", bib_title.lower()))
+    if not bib_words:
+        return 0.0
+    pdf_lower = pdf_text.lower()
+    repaired = repair_letter_spacing(pdf_lower)
+    pdf_words = set(re.findall(rf"[a-z]{{{min_word_len},}}", repaired))
+    collapsed = collapse_whitespace(repaired)
+    matched = sum(1 for w in bib_words if w in pdf_words or w in collapsed)
+    return matched / len(bib_words)
 
 
 def tokenize(text: str) -> list[str]:

@@ -5,6 +5,33 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-04-24
+
+### Added
+- ``textproc.collapse_whitespace(text)`` — strip all whitespace from text;
+  primitive for substring-matching against pdftotext output where word
+  boundaries are unreliable due to letter-spacing.
+- ``textproc.title_word_match(bib_title, pdf_text)`` — robust title-overlap
+  heuristic that combines word-set matching with substring fallback against
+  the whitespace-collapsed text. Catches cases like "DARTS: D IFFERENTIABLE
+  A RCHITECTURE S EARCH" where each word's first letter is detached.
+
+### Changed
+- ``verify._title_overlap`` now uses ``title_word_match`` so verification
+  scoring is robust to letter-spaced PDF artifacts in API responses.
+- Documented ``repair_letter_spacing`` to clarify it handles long single-
+  letter runs only; for partial-word patterns, ``title_word_match`` is the
+  right tool.
+
+### Tests
+- 9 new tests for the textproc additions and edge cases. Total: 45 passing.
+
+### Why this was bumped to a minor (0.3 vs. 0.2.1) release
+Adding ``title_word_match`` and changing ``_title_overlap``'s underlying
+algorithm changes verification verdicts in some cases (typically: more
+matches recognized, fewer false-negative "not-found" verdicts on titles with
+letter-spaced PDFs). That's a behavior change, not a bug fix.
+
 ## [0.2.0] — 2026-04-24
 
 ### Added

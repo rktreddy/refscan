@@ -100,7 +100,7 @@ Each finding shows a run of consecutive words shared between your paper and one 
 
 ## Known limitations
 
-- **pdftotext letter-spacing artifacts.** Section titles rendered with letter-spaced fonts extract as `d i f f e r e n t i a b l e`. `refscan` heuristically rejoins these but pathological PDFs may still produce bad tokens. Use `--no-filter` plus inspection if you suspect false negatives.
+- **pdftotext letter-spacing artifacts.** Section titles rendered with letter-spaced fonts extract as `d i f f e r e n t i a b l e`. `refscan` rejoins long single-letter runs (4+ in a row); for partial-word patterns like `D IFFERENTIABLE A RCHITECTURE S EARCH`, the verify command falls back to substring matching against the whitespace-collapsed text, which catches them. Body-text shingle matching may still miss letter-spaced text — but this is rare in body content.
 - **Only considers cited references.** Does not catch accidental overlap with uncited work. For that, use a paid service like iThenticate or Crossref Similarity Check.
 - **No support for BibLaTeX advanced features** (`\addbibresource`, cross-references, string substitutions). Plain BibTeX only.
 - **Books and pre-arxiv papers often unavailable.** The auto-fetcher cannot download paywalled content or material not on arXiv/S2. You'll need to grab those manually.

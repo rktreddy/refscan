@@ -30,6 +30,7 @@ from .fetch import (
     reset_rate_limit_state,
     semantic_scholar_search_metadata,
 )
+from .textproc import title_word_match
 from .track import categorize
 
 
@@ -72,12 +73,13 @@ def _word_set(text: str) -> set[str]:
 
 
 def _title_overlap(bib_title: str, candidate_title: str) -> float:
-    """Fraction of bib-title words present in candidate title."""
-    bw = _word_set(bib_title)
-    if not bw:
-        return 0.0
-    cw = _word_set(candidate_title)
-    return len(bw & cw) / len(bw)
+    """Fraction of bib-title words present in candidate title.
+
+    Uses the robust ``title_word_match`` from textproc so candidate titles that
+    were extracted from letter-spaced PDF rendering (rare for API responses,
+    but possible) are matched correctly.
+    """
+    return title_word_match(bib_title, candidate_title)
 
 
 def _author_in(authors: list[str], surname: str) -> bool:
