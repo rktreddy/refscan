@@ -64,6 +64,9 @@ Extract text from every reference PDF, then shingle-match (sliding N-word window
 ### `refscan overlap <paper_dir> <paper_dir> ... [--shingle-n N] [--out PATH]`
 Detect shared n-word passages across two or more papers. Useful as a self-plagiarism check for a research program.
 
+### `refscan sanity-stats <paper_dir> [--out PATH]`
+Bib hygiene report. Surfaces undefined cites, unused entries, duplicate keys, duplicate titles, missing required fields, suspicious years, and stub authors. Exits with code 1 on any errors, 0 otherwise — useful in CI. Output: `literature/sanity_report.md`.
+
 ### `refscan verify <paper_dir> [--no-s2] [--refresh] [--out PATH]`
 Check each bib entry against arXiv + Semantic Scholar. Flags entries where no convincing match is found (likely fabricated) or where bib metadata diverges from the canonical record. Output: `literature/verification_report.md`. Cached at `literature/verify_cache.json`.
 

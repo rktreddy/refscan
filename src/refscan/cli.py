@@ -11,6 +11,7 @@ from . import __version__
 from .bib import parse_bib
 from .fetch import ARXIV_DELAY_S, fetch_entry
 from .overlap import detect_overlap, render_overlap_md
+from .sanity import render_sanity_md, run_sanity, summarize
 from .scan import DEFAULT_MIN_RUN, DEFAULT_SHINGLE_N, render_findings_md, scan
 from .track import generate_tracking_md
 from .verify import render_verification_md, verify_paper
@@ -131,6 +132,22 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sanity(args: argparse.Namespace) -> int:
+    paper_dir = Path(args.paper_dir).resolve()
+    issues, n_entries, n_cited = run_sanity(paper_dir)
+    report = render_sanity_md(_paper_label(paper_dir), issues,
+                                total_entries=n_entries, total_cited=n_cited,
+                                scan_date=_today())
+    out_path = Path(args.out) if args.out else paper_dir / "literature" / "sanity_report.md"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(report)
+    counts = summarize(issues)
+    print(f"wrote {out_path}")
+    print(f"  entries: {n_entries}  |  cited: {n_cited}")
+    print(f"  errors: {counts['error']}  |  warnings: {counts['warning']}  |  info: {counts['info']}")
+    return 1 if counts["error"] > 0 else 0
+
+
 def cmd_overlap(args: argparse.Namespace) -> int:
     paper_dirs = [Path(p).resolve() for p in args.paper_dirs]
     sections = {p.name: p / "paper" / "sections" for p in paper_dirs}
@@ -188,6 +205,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="ignore cached results and re-query APIs")
     pv.add_argument("--out", help="output path (default: paper_dir/literature/verification_report.md)")
     pv.set_defaults(func=cmd_verify)
+
+    pn = sub.add_parser("sanity-stats", help="bib hygiene report (cited vs defined, dupes, missing fields)")
+    pn.add_argument("paper_dir")
+    pn.add_argument("--out", help="output path (default: paper_dir/literature/sanity_report.md)")
+    pn.set_defaults(func=cmd_sanity)
 
     po = sub.add_parser("overlap", help="cross-paper overlap scan across 2+ papers")
     po.add_argument("paper_dirs", nargs="+")

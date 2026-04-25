@@ -5,6 +5,30 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-04-24
+
+### Added
+- **`refscan sanity-stats`** — bib hygiene report. Surfaces problems before
+  they reach reviewers:
+  - 🔴 **errors**: cited keys not defined, duplicate keys, missing title.
+  - 🟡 **warnings**: unused entries (bib bloat), duplicate titles (likely
+    duplicate refs with different keys), missing author/year for normal
+    entries, year too old (< 1900) or in the future, stub authors
+    (just "and others" with nothing else).
+  - ℹ️ **info**: missing year/author for software citations (`@misc`,
+    `@software`, `@manual`, `@online`, `@techreport`) — often legitimately
+    unspecified.
+- Output: `literature/sanity_report.md`, grouped by severity then category.
+- Exit code 1 on any errors; 0 otherwise — useful in CI.
+
+### New module
+- ``refscan.sanity`` — ``BibIssue`` dataclass, ``check_bib()``,
+  ``render_sanity_md()``, ``run_sanity()``.
+
+### Tests
+- 12 new tests covering each check independently and the renderer.
+  Total: 62 passing.
+
 ## [0.4.0] — 2026-04-24
 
 ### Added
