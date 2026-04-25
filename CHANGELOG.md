@@ -5,6 +5,18 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] — 2026-04-24
+
+### Changed
+- ``LICENSE``: copyright holder updated to "Ramakrishna Tipireddy" (was a
+  placeholder username).
+- ``pyproject.toml``: author name updated to "Ramakrishna Tipireddy" (was
+  a placeholder username). Email unchanged.
+
+This is the first release shipped via ``refscan release`` itself —
+demonstrates that the v0.8.0 release command works end-to-end on the very
+project that introduced it.
+
 ## [0.8.0] — 2026-04-24
 
 ### Added
