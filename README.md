@@ -64,6 +64,17 @@ Extract text from every reference PDF, then shingle-match (sliding N-word window
 ### `refscan overlap <paper_dir> <paper_dir> ... [--shingle-n N] [--out PATH]`
 Detect shared n-word passages across two or more papers. Useful as a self-plagiarism check for a research program.
 
+### `refscan verify <paper_dir> [--no-s2] [--refresh] [--out PATH]`
+Check each bib entry against arXiv + Semantic Scholar. Flags entries where no convincing match is found (likely fabricated) or where bib metadata diverges from the canonical record. Output: `literature/verification_report.md`. Cached at `literature/verify_cache.json`.
+
+**Semantic Scholar rate limits:** the unauthenticated endpoint throttles aggressively (often after just a few requests). For accurate verification, get a free API key at https://www.semanticscholar.org/product/api and:
+
+```bash
+export REFSCAN_S2_API_KEY=<your-key>
+```
+
+Without a key, S2 will likely 429 mid-run; the report flags this and warns that any "not-found" verdicts checked only against arXiv may be false positives for non-arXiv papers (Nature, IEEE, ACM, books).
+
 ## Typical workflow for a new paper
 
 ```bash

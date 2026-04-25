@@ -5,6 +5,39 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-04-24
+
+### Added
+- **`refscan verify`** — query arXiv + Semantic Scholar per bib entry and grade
+  the match against claimed title / first-author / year. Verdicts: `verified`,
+  `metadata-drift`, `weak-match`, `not-found`, `skipped`. Output:
+  `literature/verification_report.md` with best-match metadata inline so the
+  user can spot-fix or remove fabricated entries. Always queries the API even
+  when a PDF is already downloaded (catches substitute PDFs).
+- Per-entry result cache at `literature/verify_cache.json`. Use `--refresh` to
+  re-query.
+- `arxiv_search_metadata()` and `semantic_scholar_search_metadata()` in
+  `refscan.fetch` — return full candidate metadata (title, authors, year,
+  arXiv ID, DOI), supporting verification logic.
+- Semantic Scholar API key support via `REFSCAN_S2_API_KEY` environment
+  variable. Without a key, the unauthenticated rate limit (very strict) will
+  likely throttle after a few requests; the report flags this case.
+- 429 detection: once Semantic Scholar returns a rate-limit error, subsequent
+  S2 calls are skipped for the rest of the run and the report adds an explicit
+  caveat.
+
+### Changed
+- Default user agent updated to `refscan/0.2 (mailto:rktreddy@gmail.com)` per
+  Semantic Scholar's contact-info recommendation.
+- `_http_get()` now returns `(body, status_code)` instead of `body | None`,
+  enabling 429-aware fallback. All call sites updated.
+- `S2_DELAY_S` raised from 1.5s to 3.0s (more conservative for unauthenticated
+  use).
+
+### Tests
+- 17 new tests for verify scoring, verdict logic, and markdown rendering.
+  Total tests now 36; all passing.
+
 ## [0.1.0] — 2026-04-24
 
 Initial release. Born out of plagiarism-scan work on a 5-paper analogue-computing

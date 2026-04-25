@@ -13,6 +13,7 @@ from .fetch import ARXIV_DELAY_S, fetch_entry
 from .overlap import detect_overlap, render_overlap_md
 from .scan import DEFAULT_MIN_RUN, DEFAULT_SHINGLE_N, render_findings_md, scan
 from .track import generate_tracking_md
+from .verify import render_verification_md, verify_paper
 
 
 def _today() -> str:
@@ -100,6 +101,36 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_verify(args: argparse.Namespace) -> int:
+    paper_dir = Path(args.paper_dir).resolve()
+    if not (paper_dir / "paper" / "references.bib").exists():
+        print(f"error: no references.bib at {paper_dir}/paper/", file=sys.stderr)
+        return 1
+    use_s2 = not args.no_s2
+    results = verify_paper(
+        paper_dir=paper_dir,
+        use_s2=use_s2,
+        refresh=args.refresh,
+    )
+    from refscan import fetch as _fetch_mod
+    report = render_verification_md(
+        _paper_label(paper_dir), results, scan_date=_today(),
+        s2_rate_limited=_fetch_mod._s2_rate_limited,
+        s2_used=use_s2,
+    )
+    out_path = Path(args.out) if args.out else paper_dir / "literature" / "verification_report.md"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(report)
+    counts = {}
+    for r in results:
+        counts[r.verdict] = counts.get(r.verdict, 0) + 1
+    print(f"\nwrote {out_path}")
+    for v in ("not-found", "weak-match", "metadata-drift", "verified", "skipped", "api-error"):
+        if v in counts:
+            print(f"  {v}: {counts[v]}")
+    return 0
+
+
 def cmd_overlap(args: argparse.Namespace) -> int:
     paper_dirs = [Path(p).resolve() for p in args.paper_dirs]
     sections = {p.name: p / "paper" / "sections" for p in paper_dirs}
@@ -148,6 +179,15 @@ def build_parser() -> argparse.ArgumentParser:
                     help="disable generic-phrase filter (show raw matches)")
     ps.add_argument("--out", help="output path (default: paper_dir/literature/plagiarism_findings.md)")
     ps.set_defaults(func=cmd_scan)
+
+    pv = sub.add_parser("verify", help="check bib entries against arXiv + Semantic Scholar")
+    pv.add_argument("paper_dir")
+    pv.add_argument("--no-s2", action="store_true",
+                    help="skip Semantic Scholar (arXiv only, faster)")
+    pv.add_argument("--refresh", action="store_true",
+                    help="ignore cached results and re-query APIs")
+    pv.add_argument("--out", help="output path (default: paper_dir/literature/verification_report.md)")
+    pv.set_defaults(func=cmd_verify)
 
     po = sub.add_parser("overlap", help="cross-paper overlap scan across 2+ papers")
     po.add_argument("paper_dirs", nargs="+")

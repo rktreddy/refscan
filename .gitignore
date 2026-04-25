@@ -31,6 +31,9 @@ venv/
 env/
 ENV/
 
+# uv lockfile (regenerated; package has no pinned runtime deps)
+uv.lock
+
 # IDE / editors
 .vscode/
 .idea/
