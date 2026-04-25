@@ -246,27 +246,110 @@ def download_pdf(url: str, dest: Path, user_agent: str = DEFAULT_USER_AGENT,
     return True
 
 
-def fetch_entry(entry: BibEntry, dest: Path, user_agent: str = DEFAULT_USER_AGENT,
-                try_s2: bool = True) -> tuple[bool, str | None]:
-    """Attempt to fetch ``entry`` to ``dest``. Returns (success, source_label)."""
-    if dest.exists():
-        return True, "already-present"
+def resolve_pdf_url(entry: BibEntry, user_agent: str = DEFAULT_USER_AGENT,
+                     try_s2: bool = True,
+                     sleep: bool = True) -> tuple[str | None, str | None]:
+    """Resolve a downloadable PDF URL for ``entry`` without downloading.
 
+    Tries (in order): explicit arXiv ID in bib, arXiv search, Semantic Scholar.
+    Returns (url, source_label) or (None, None). Sleeps between API calls
+    when ``sleep`` is True.
+    """
     aid = entry.explicit_arxiv_id
     if aid:
-        if download_pdf(f"https://arxiv.org/pdf/{aid}.pdf", dest, user_agent):
-            return True, "arxiv-explicit"
+        return f"https://arxiv.org/pdf/{aid}.pdf", "arxiv-explicit"
 
     aid = arxiv_search(entry.title, entry.first_author, user_agent)
-    time.sleep(ARXIV_DELAY_S)
+    if sleep:
+        time.sleep(ARXIV_DELAY_S)
     if aid:
-        if download_pdf(f"https://arxiv.org/pdf/{aid}.pdf", dest, user_agent):
-            return True, "arxiv-search"
+        return f"https://arxiv.org/pdf/{aid}.pdf", "arxiv-search"
 
     if try_s2:
         pdf_url = semantic_scholar_pdf_url(entry.title, entry.first_author, user_agent)
-        time.sleep(S2_DELAY_S)
-        if pdf_url and download_pdf(pdf_url, dest, user_agent):
-            return True, "semantic-scholar"
+        if sleep:
+            time.sleep(S2_DELAY_S)
+        if pdf_url:
+            return pdf_url, "semantic-scholar"
 
+    return None, None
+
+
+def fetch_entry(entry: BibEntry, dest: Path, user_agent: str = DEFAULT_USER_AGENT,
+                try_s2: bool = True) -> tuple[bool, str | None]:
+    """Attempt to fetch ``entry`` to ``dest``. Returns (success, source_label).
+
+    Backwards-compatible wrapper around ``resolve_pdf_url`` + ``download_pdf``.
+    """
+    if dest.exists():
+        return True, "already-present"
+    url, source = resolve_pdf_url(entry, user_agent, try_s2)
+    if url and download_pdf(url, dest, user_agent):
+        return True, source
     return False, None
+
+
+def fetch_paper(bib_entries: list[BibEntry], refs_dir: Path,
+                user_agent: str = DEFAULT_USER_AGENT,
+                try_s2: bool = True, max_workers: int = 1,
+                progress: bool = True) -> list[dict]:
+    """Fetch PDFs for many bib entries with optional parallel downloads.
+
+    Resolution (API search) is sequential to respect rate limits. Downloads
+    happen in a ThreadPoolExecutor with ``max_workers`` threads — set to 1
+    for fully sequential behavior, or 5–10 for noticeably faster bulk fetch.
+
+    Returns a list of dicts: {key, status, source, url}.
+      - status: "downloaded" | "already-present" | "not-found" | "download-failed"
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    refs_dir.mkdir(parents=True, exist_ok=True)
+    results: list[dict] = []
+    to_download: list[tuple[BibEntry, str, str, Path]] = []
+
+    # Phase 1: resolve URLs (sequential, rate-limited).
+    for i, e in enumerate(bib_entries, 1):
+        dest = refs_dir / f"{e.key}.pdf"
+        if dest.exists():
+            results.append({"key": e.key, "status": "already-present",
+                             "source": None, "url": None})
+            if progress:
+                print(f"[{i}/{len(bib_entries)}] {e.key}: already present", flush=True)
+            continue
+        if progress:
+            print(f"[{i}/{len(bib_entries)}] {e.key}: resolving...", end=" ", flush=True)
+        url, source = resolve_pdf_url(e, user_agent, try_s2)
+        if url:
+            to_download.append((e, url, source, dest))
+            if progress:
+                print(f"→ {source}", flush=True)
+        else:
+            results.append({"key": e.key, "status": "not-found",
+                             "source": None, "url": None})
+            if progress:
+                print("not found", flush=True)
+
+    # Phase 2: parallel download.
+    if to_download and progress:
+        print(f"\ndownloading {len(to_download)} PDFs (max_workers={max_workers})...",
+              flush=True)
+    with ThreadPoolExecutor(max_workers=max(1, max_workers)) as ex:
+        future_to_meta = {
+            ex.submit(download_pdf, url, dest, user_agent): (e, url, source, dest)
+            for (e, url, source, dest) in to_download
+        }
+        for future in as_completed(future_to_meta):
+            e, url, source, _ = future_to_meta[future]
+            ok = future.result()
+            results.append({
+                "key": e.key,
+                "status": "downloaded" if ok else "download-failed",
+                "source": source,
+                "url": url,
+            })
+            if progress:
+                tag = "✓" if ok else "✗"
+                print(f"  {tag} {e.key}", flush=True)
+
+    return results

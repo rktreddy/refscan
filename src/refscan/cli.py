@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .bib import parse_bib
-from .fetch import ARXIV_DELAY_S, fetch_entry
+from .fetch import ARXIV_DELAY_S, fetch_entry, fetch_paper
 from .overlap import detect_overlap, render_overlap_md
 from .sanity import render_sanity_md, run_sanity, summarize
 from .scan import (
@@ -53,20 +53,19 @@ def cmd_fetch(args: argparse.Namespace) -> int:
 
     entries = parse_bib(bib)
     n_before = sum(1 for e in entries if (refs_dir / f"{e.key}.pdf").exists())
-    downloaded = 0
-    for idx, e in enumerate(entries, 1):
-        dest = refs_dir / f"{e.key}.pdf"
-        if dest.exists():
-            continue
-        print(f"[{idx}/{len(entries)}] {e.key}: {e.title[:70]}...")
-        ok, src = fetch_entry(e, dest, try_s2=not args.no_s2)
-        if ok:
-            downloaded += 1
-            print(f"  ✓ {src}")
-        else:
-            print("  ✗ not found")
-    print(f"\nbefore: {n_before} / {len(entries)}  |  newly downloaded: {downloaded}  |  "
-          f"still missing: {len(entries) - n_before - downloaded}")
+    results = fetch_paper(
+        entries, refs_dir,
+        try_s2=not args.no_s2,
+        max_workers=args.workers,
+        progress=True,
+    )
+    downloaded = sum(1 for r in results if r["status"] == "downloaded")
+    failed = sum(1 for r in results if r["status"] == "download-failed")
+    not_found = sum(1 for r in results if r["status"] == "not-found")
+    print(f"\nbefore: {n_before} / {len(entries)}  |  "
+          f"newly downloaded: {downloaded}  |  "
+          f"download-failed: {failed}  |  "
+          f"not found: {not_found}")
     # Refresh tracking file to reflect new state
     generate_tracking_md(paper_dir, _paper_label(paper_dir), scan_date=_today())
     return 0
@@ -246,6 +245,10 @@ def build_parser() -> argparse.ArgumentParser:
     pf.add_argument("--bib", help="override path to references.bib")
     pf.add_argument("--no-s2", action="store_true",
                     help="skip Semantic Scholar fallback (arXiv only)")
+    pf.add_argument("--workers", type=int, default=5,
+                    help="parallel download workers (default: 5; set 1 for "
+                         "fully sequential). API resolution is always sequential "
+                         "to respect rate limits.")
     pf.set_defaults(func=cmd_fetch)
 
     pt = sub.add_parser("track", help="regenerate reference_tracking.md")

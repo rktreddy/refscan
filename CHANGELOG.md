@@ -5,6 +5,31 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-04-24
+
+### Added
+- ``fetch.resolve_pdf_url(entry, ...)`` — separates URL resolution (the
+  rate-limited part) from the actual download. Returns ``(url, source)``.
+- ``fetch.fetch_paper(entries, refs_dir, max_workers=N, ...)`` — bulk-fetch
+  helper that runs URL resolution sequentially (respects arXiv/S2 rate
+  limits) and PDF downloads in parallel via a ``ThreadPoolExecutor``.
+  Returns per-entry result dicts with status, source, and url.
+- ``refscan fetch`` now accepts ``--workers N`` (default 5). Parallel
+  downloads typically cut bulk-fetch wall time by 30–60% on a corpus of
+  100+ references.
+
+### Changed
+- ``refscan fetch`` CLI rewritten to use ``fetch_paper`` internally; output
+  now shows a resolution phase followed by a download phase. New summary
+  line distinguishes ``downloaded``/``download-failed``/``not-found``.
+- ``fetch.fetch_entry`` is preserved as a backwards-compatible single-entry
+  wrapper (used elsewhere in the codebase) but now delegates to
+  ``resolve_pdf_url`` + ``download_pdf`` internally.
+
+### Tests
+- 8 new tests for ``resolve_pdf_url`` and ``fetch_paper`` (uses mocking to
+  avoid network). Total: 73 passing.
+
 ## [0.6.0] — 2026-04-24
 
 ### Added

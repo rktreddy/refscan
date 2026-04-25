@@ -52,8 +52,8 @@ paper_X/
 ### `refscan init <paper_dir>`
 Scaffold `literature/refs/`, `literature/pdf_text_cache/`, and write an initial `reference_tracking.md`.
 
-### `refscan fetch <paper_dir> [--no-s2]`
-Parse `paper/references.bib`. For each entry, try arXiv (by explicit ID if present, otherwise by title+author search), then Semantic Scholar (unless `--no-s2`). Download PDFs into `literature/refs/{BIBKEY}.pdf`. Rate-limited to arXiv/S2 guidelines.
+### `refscan fetch <paper_dir> [--no-s2] [--workers N]`
+Parse `paper/references.bib`. For each entry, try arXiv (by explicit ID if present, otherwise by title+author search), then Semantic Scholar (unless `--no-s2`). Download PDFs into `literature/refs/{BIBKEY}.pdf`. URL resolution is sequential and rate-limited per arXiv/S2 guidelines; downloads run in parallel via a thread pool (default 5 workers, set `--workers 1` for fully sequential).
 
 ### `refscan track <paper_dir>`
 Regenerate `literature/reference_tracking.md` based on what's currently in `literature/refs/`.
