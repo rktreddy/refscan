@@ -12,10 +12,21 @@ Stdlib-only at runtime (uses `pdftotext` from poppler for PDF text extraction).
 
 ## Install
 
+**Recommended (uv tool — works from any directory regardless of active venv):**
+
 ```bash
-cd refscan
-pip install -e .          # installs the `refscan` CLI into your active Python env
+git clone <your-remote>/refscan
+uv tool install --editable refscan
 ```
+
+**Alternative (pip — installs into current Python env):**
+
+```bash
+git clone <your-remote>/refscan
+pip install -e refscan
+```
+
+Both are editable installs — code edits in `refscan/src/refscan/` take effect immediately, no reinstall needed.
 
 Runtime dependency: `pdftotext` (poppler). On macOS: `brew install poppler`. On Debian/Ubuntu: `apt install poppler-utils`.
 
@@ -86,10 +97,17 @@ Each finding shows a run of consecutive words shared between your paper and one 
 ## Tests
 
 ```bash
-pip install -e ".[dev]"
+cd refscan
+pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
+19 tests covering bib parsing, text processing, shingle logic, and generic-phrase detection.
+
+## Versioning & changelog
+
+See [`CHANGELOG.md`](CHANGELOG.md). Releases follow [Semantic Versioning](https://semver.org/).
+
 ## License
 
-MIT
+[MIT](LICENSE)
