@@ -5,6 +5,37 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-04-24
+
+### Added
+- **`refscan release {patch|minor|major|X.Y.Z} [--push] [--no-test] [--dry-run]`** —
+  maintainer-only meta-command for shipping new versions of refscan itself.
+  Validates the environment (must be on ``main``, working tree clean except
+  for the version files, ``CHANGELOG.md`` already has a section for the
+  target version), runs the test suite, bumps the version in
+  ``pyproject.toml`` and ``src/refscan/__init__.py`` in lockstep, commits
+  both with a standard message, tags ``v{new_version}``, and (with
+  ``--push``) pushes the branch + tag to ``origin``.
+- ``--dry-run`` flag to preview the planned actions without modifying
+  anything.
+- ``refscan.release`` module exposes ``plan_release()``, ``execute()``,
+  and pure helpers (``_bump_version``, ``_replace_version_in_file``,
+  ``_changelog_has_version``).
+
+### Notes
+- Only works for editable installs (``pip install -e`` or
+  ``uv tool install --editable``) since it must locate the source repo.
+  Refuses to run otherwise with a clear error message.
+- Refuses to release when not on the ``main`` branch.
+- Refuses to release when the working tree has uncommitted changes outside
+  the three version-tracked files.
+- Refuses to release when the new version's CHANGELOG section is missing —
+  forces the maintainer to write release notes before shipping.
+
+### Tests
+- 13 new tests for version bumping, changelog scanning, and version-file
+  replacement (without invoking git or pytest). Total: 86 passing.
+
 ## [0.7.0] — 2026-04-24
 
 ### Added

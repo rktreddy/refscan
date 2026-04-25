@@ -61,6 +61,9 @@ Regenerate `literature/reference_tracking.md` based on what's currently in `lite
 ### `refscan scan <paper_dir> [--shingle-n N] [--min-run M] [--no-filter] [--out PATH]`
 Extract text from every reference PDF, then shingle-match (sliding N-word windows) against each LaTeX section in `paper/sections/`. Write a findings report ranked by **confidence score** — a 0–1 metric combining run length, non-stopword density, and phrase rarity across the cited reference corpus. The report opens with a **Top N concerning matches** table for quick triage, followed by all findings grouped by reference. Default shingle size is 6 words.
 
+### `refscan release {patch|minor|major|X.Y.Z} [--push] [--no-test] [--dry-run]`
+Maintainer-only meta-command for shipping new versions of refscan itself. Validates environment, runs tests, bumps version in `pyproject.toml` and `__init__.py` in lockstep, commits, tags `v{new_version}`, and (with `--push`) pushes to `origin`. Requires editable install + clean working tree on `main` + a CHANGELOG section pre-written for the new version. Use `--dry-run` to preview.
+
 ### `refscan watch <paper_dir> [--interval N] [--top N]`
 Active-drafting helper. Polls `paper/sections/*.tex` at the configured interval and re-runs the plagiarism scan whenever any file is saved, printing a compact terminal summary (top-N matches by confidence). Press `Ctrl-C` to stop. Defaults: poll every 1s, show top 5.
 

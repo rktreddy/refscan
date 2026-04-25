@@ -11,6 +11,7 @@ from . import __version__
 from .bib import parse_bib
 from .fetch import ARXIV_DELAY_S, fetch_entry, fetch_paper
 from .overlap import detect_overlap, render_overlap_md
+from .release import execute as release_execute, plan_release
 from .sanity import render_sanity_md, run_sanity, summarize
 from .scan import (
     DEFAULT_MIN_RUN,
@@ -213,6 +214,20 @@ def cmd_watch(args: argparse.Namespace) -> int:
         return 0
 
 
+def cmd_release(args: argparse.Namespace) -> int:
+    try:
+        plan = plan_release(
+            kind=args.kind,
+            push=args.push,
+            run_tests=not args.no_test,
+            dry_run=args.dry_run,
+        )
+    except (RuntimeError, ValueError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    return release_execute(plan)
+
+
 def cmd_overlap(args: argparse.Namespace) -> int:
     paper_dirs = [Path(p).resolve() for p in args.paper_dirs]
     sections = {p.name: p / "paper" / "sections" for p in paper_dirs}
@@ -291,6 +306,20 @@ def build_parser() -> argparse.ArgumentParser:
     pw.add_argument("--min-run", type=int, default=DEFAULT_MIN_RUN,
                     help=f"minimum run length in tokens (default: {DEFAULT_MIN_RUN})")
     pw.set_defaults(func=cmd_watch)
+
+    pr = sub.add_parser(
+        "release",
+        help="(maintainer-only) bump version, run tests, commit, tag, optionally push",
+    )
+    pr.add_argument("kind",
+                    help="patch | minor | major | explicit X.Y.Z version")
+    pr.add_argument("--push", action="store_true",
+                    help="git push branch + tag after committing (default: skip)")
+    pr.add_argument("--no-test", action="store_true",
+                    help="skip pytest run (default: run tests)")
+    pr.add_argument("--dry-run", action="store_true",
+                    help="show what would happen without modifying anything")
+    pr.set_defaults(func=cmd_release)
 
     po = sub.add_parser("overlap", help="cross-paper overlap scan across 2+ papers")
     po.add_argument("paper_dirs", nargs="+")
