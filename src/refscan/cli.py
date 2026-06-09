@@ -33,6 +33,16 @@ def _paper_label(paper_dir: Path) -> str:
     return paper_dir.name
 
 
+def _note_autodetect(layout) -> None:
+    """Tell the user when bib/sections were auto-discovered (not configured)."""
+    if layout.auto_bib:
+        print(f"note: auto-detected bib at {layout.bib} "
+              f"(set `bib` in refscan.json to pin it)", file=sys.stderr)
+    if layout.auto_sections:
+        print(f"note: auto-detected {len(layout.section_files)} section .tex "
+              f"file(s) (set `sections` in refscan.json to pin them)", file=sys.stderr)
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     paper_dir = Path(args.paper_dir).resolve()
     layout = resolve_layout(paper_dir)
@@ -54,6 +64,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_fetch(args: argparse.Namespace) -> int:
     paper_dir = Path(args.paper_dir).resolve()
     layout = resolve_layout(paper_dir, bib=args.bib)
+    _note_autodetect(layout)
     refs_dir = layout.refs_dir
     refs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -87,6 +98,7 @@ def cmd_fetch(args: argparse.Namespace) -> int:
 def cmd_track(args: argparse.Namespace) -> int:
     paper_dir = Path(args.paper_dir).resolve()
     layout = resolve_layout(paper_dir, bib=args.bib)
+    _note_autodetect(layout)
     path, counts = generate_tracking_md(
         paper_dir, _paper_label(paper_dir),
         bib_path=layout.bib, refs_dir=layout.refs_dir,
@@ -101,6 +113,7 @@ def cmd_track(args: argparse.Namespace) -> int:
 def cmd_scan(args: argparse.Namespace) -> int:
     paper_dir = Path(args.paper_dir).resolve()
     layout = resolve_layout(paper_dir, bib=args.bib, sections=args.sections)
+    _note_autodetect(layout)
     if not layout.section_files:
         print(f"error: no section .tex files found (sections="
               f"{args.sections or 'paper/sections'})", file=sys.stderr)
@@ -131,6 +144,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
 def cmd_verify(args: argparse.Namespace) -> int:
     paper_dir = Path(args.paper_dir).resolve()
     layout = resolve_layout(paper_dir, bib=args.bib)
+    _note_autodetect(layout)
     if not layout.bib.exists():
         print(f"error: no references.bib at {layout.bib}", file=sys.stderr)
         return 1
@@ -162,6 +176,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 def cmd_sanity(args: argparse.Namespace) -> int:
     paper_dir = Path(args.paper_dir).resolve()
     layout = resolve_layout(paper_dir, bib=args.bib, sections=args.sections)
+    _note_autodetect(layout)
     issues, n_entries, n_cited = run_sanity(paper_dir, bib=args.bib, sections=args.sections)
     report = render_sanity_md(_paper_label(paper_dir), issues,
                                 total_entries=n_entries, total_cited=n_cited,
@@ -179,6 +194,7 @@ def cmd_sanity(args: argparse.Namespace) -> int:
 def cmd_watch(args: argparse.Namespace) -> int:
     paper_dir = Path(args.paper_dir).resolve()
     layout = resolve_layout(paper_dir, sections=args.sections)
+    _note_autodetect(layout)
     if not layout.section_files:
         print(f"error: no section .tex files found (sections="
               f"{args.sections or 'paper/sections'})", file=sys.stderr)
@@ -263,6 +279,95 @@ def cmd_overlap(args: argparse.Namespace) -> int:
     print(f"paper pairs with overlap: {len(result['pair_runs'])}")
     print(f"wrote {out_path}")
     return 0
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    """One-shot integrity check: layout + sanity + scan (+ optional verify)."""
+    paper_dir = Path(args.paper_dir).resolve()
+    layout = resolve_layout(paper_dir, bib=args.bib, sections=args.sections)
+    label = _paper_label(paper_dir)
+    n_sec = len(layout.section_files)
+    n_refs = len(list(layout.refs_dir.glob("*.pdf"))) if layout.refs_dir.is_dir() else 0
+
+    print(f"refscan check: {label}")
+    print(f"  bib:      {layout.bib}{'  (auto-detected)' if layout.auto_bib else ''}")
+    print(f"  sections: {n_sec} .tex file(s)"
+          f"{'  (auto-detected)' if layout.auto_sections else ''}")
+    print(f"  refs:     {n_refs} PDF(s) in {layout.refs_dir}\n")
+
+    if not layout.bib.exists():
+        print(f"error: no references.bib found (looked at {layout.bib}). "
+              f"Set `bib` in refscan.json or pass --bib.", file=sys.stderr)
+        return 1
+
+    status = "PASS"
+    lines: list[str] = []
+
+    def _degrade(to: str) -> None:
+        nonlocal status
+        rank = {"PASS": 0, "WARN": 1, "FAIL": 2}
+        if rank[to] > rank[status]:
+            status = to
+
+    # Sanity (offline)
+    issues, n_entries, n_cited = run_sanity(paper_dir, bib=args.bib, sections=args.sections)
+    sc = summarize(issues)
+    layout.sanity_md.parent.mkdir(parents=True, exist_ok=True)
+    layout.sanity_md.write_text(render_sanity_md(
+        label, issues, total_entries=n_entries, total_cited=n_cited, scan_date=_today()))
+    lines.append(f"  sanity:  {sc['error']} error(s), {sc['warning']} warning(s)  "
+                 f"({n_entries} entries, {n_cited} cited)")
+    if sc["error"]:
+        _degrade("FAIL")
+    elif sc["warning"]:
+        _degrade("WARN")
+
+    # Scan (offline)
+    if n_sec == 0:
+        lines.append("  scan:    skipped (no section .tex files found)")
+        _degrade("WARN")
+    elif n_refs == 0:
+        lines.append("  scan:    skipped (no reference PDFs — run `refscan fetch`)")
+        _degrade("WARN")
+    else:
+        result = scan(section_files=list(layout.section_files), refs_dir=layout.refs_dir,
+                      cache_dir=layout.cache_dir, shingle_n=args.shingle_n, min_run=args.min_run)
+        findings = result["findings"]
+        top = findings[0]["score"] if findings else 0.0
+        layout.findings_md.write_text(render_findings_md(label, result, scan_date=_today()))
+        lines.append(f"  scan:    {len(findings)} finding(s), top confidence {top:.2f}  "
+                     f"({len(result['refs_indexed'])} refs indexed)")
+        if findings and top >= 0.5:
+            _degrade("WARN")
+
+    # Verify (network, opt-in)
+    if args.verify:
+        use_s2 = not args.no_s2
+        results = verify_paper(paper_dir=paper_dir, use_s2=use_s2,
+                               refresh=args.refresh, bib=args.bib, progress=False)
+        vc: dict[str, int] = {}
+        for r in results:
+            vc[r.verdict] = vc.get(r.verdict, 0) + 1
+        layout.verification_md.write_text(render_verification_md(
+            label, results, scan_date=_today(),
+            s2_rate_limited=was_rate_limited(), s2_used=use_s2))
+        lines.append(
+            f"  verify:  {vc.get('verified', 0)} verified, {vc.get('not-found', 0)} not-found, "
+            f"{vc.get('weak-match', 0)} weak, {vc.get('metadata-drift', 0)} drift, "
+            f"{vc.get('api-error', 0)} api-error")
+        if vc.get("not-found", 0):
+            _degrade("FAIL")
+        elif vc.get("weak-match", 0) or vc.get("metadata-drift", 0):
+            _degrade("WARN")
+    else:
+        lines.append("  verify:  skipped (pass --verify to check refs against arXiv/S2; uses network)")
+
+    print("results:")
+    for ln in lines:
+        print(ln)
+    icon = {"PASS": "✅", "WARN": "⚠️", "FAIL": "❌"}[status]
+    print(f"\n{icon} {status}    reports in {layout.literature_dir}/")
+    return 1 if status == "FAIL" else 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -363,6 +468,26 @@ def build_parser() -> argparse.ArgumentParser:
                     help="shingle size in tokens (default: 10)")
     po.add_argument("--out", help="output path (default: ./overlap_report.md)")
     po.set_defaults(func=cmd_overlap)
+
+    pck = sub.add_parser(
+        "check",
+        help="one-shot integrity check: layout + sanity + scan (+ optional verify) "
+             "with a PASS/WARN/FAIL verdict",
+    )
+    pck.add_argument("paper_dir")
+    pck.add_argument("--bib", help=_BIB_HELP)
+    pck.add_argument("--sections", help=_SECTIONS_HELP)
+    pck.add_argument("--verify", action="store_true",
+                     help="also verify bib entries against arXiv/Semantic Scholar (network)")
+    pck.add_argument("--no-s2", action="store_true",
+                     help="with --verify: skip Semantic Scholar (arXiv only)")
+    pck.add_argument("--refresh", action="store_true",
+                     help="with --verify: ignore cached results")
+    pck.add_argument("--shingle-n", type=int, default=DEFAULT_SHINGLE_N,
+                     help=f"shingle size in tokens (default: {DEFAULT_SHINGLE_N})")
+    pck.add_argument("--min-run", type=int, default=DEFAULT_MIN_RUN,
+                     help=f"minimum run length in tokens (default: {DEFAULT_MIN_RUN})")
+    pck.set_defaults(func=cmd_check)
 
     return p
 
