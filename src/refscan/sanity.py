@@ -57,9 +57,11 @@ def _parse_bib_with_duplicates(path: Path) -> tuple[list[BibEntry], list[str]]:
     return parse_bib(path), keys_in_order
 
 
-def check_bib(bib_path: Path, sections_dir: Path,
-              main_tex: Path | None = None) -> list[BibIssue]:
-    """Run all sanity checks. Returns a flat list of BibIssue."""
+def check_bib(bib_path: Path, cite_files: list[Path]) -> list[BibIssue]:
+    """Run all sanity checks. Returns a flat list of BibIssue.
+
+    ``cite_files`` is the list of .tex files to scan for ``\\cite`` keys.
+    """
     issues: list[BibIssue] = []
     if not bib_path.exists():
         issues.append(BibIssue("error", "bib-missing", "",
@@ -67,7 +69,7 @@ def check_bib(bib_path: Path, sections_dir: Path,
         return issues
 
     entries, raw_keys = _parse_bib_with_duplicates(bib_path)
-    cited = cited_keys(sections_dir, main_tex)
+    cited = cited_keys(cite_files)
 
     # 1. Duplicate keys in the bib file
     dup_keys = [k for k, c in Counter(raw_keys).items() if c > 1]
@@ -224,13 +226,16 @@ def render_sanity_md(paper_label: str, issues: list[BibIssue],
     return "".join(out)
 
 
-def run_sanity(paper_dir: Path) -> tuple[list[BibIssue], int, int]:
-    """Convenience: parse bib + sections, run checks, return (issues, n_entries, n_cited)."""
-    bib_path = paper_dir / "paper" / "references.bib"
-    sections_dir = paper_dir / "paper" / "sections"
-    main_tex = paper_dir / "paper" / "main.tex"
-    issues = check_bib(bib_path, sections_dir, main_tex if main_tex.exists() else None)
-    n_entries = len(parse_bib(bib_path)) if bib_path.exists() else 0
-    n_cited = len(cited_keys(sections_dir, main_tex if main_tex.exists() else None)) \
-              if sections_dir.exists() else 0
+def run_sanity(paper_dir: Path, *, bib: str | None = None,
+               sections: str | None = None) -> tuple[list[BibIssue], int, int]:
+    """Convenience: resolve layout, run checks, return (issues, n_entries, n_cited).
+
+    ``bib``/``sections`` are optional overrides (typically from CLI flags) layered
+    over ``refscan.json`` and the default ``paper/...`` layout.
+    """
+    from .layout import resolve_layout
+    layout = resolve_layout(paper_dir, bib=bib, sections=sections)
+    issues = check_bib(layout.bib, layout.cite_files)
+    n_entries = len(parse_bib(layout.bib)) if layout.bib.exists() else 0
+    n_cited = len(cited_keys(layout.cite_files))
     return issues, n_entries, n_cited

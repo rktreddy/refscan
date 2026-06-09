@@ -206,11 +206,18 @@ def _deserialize_result(d: dict) -> VerifyResult:
 
 def verify_paper(paper_dir: Path, use_s2: bool = True, refresh: bool = False,
                  user_agent: str = DEFAULT_USER_AGENT,
-                 progress: bool = True) -> list[VerifyResult]:
-    """Verify every bib entry in a paper. Returns list of VerifyResult."""
-    bib = paper_dir / "paper" / "references.bib"
-    refs = paper_dir / "literature" / "refs"
-    cache_file = paper_dir / "literature" / "verify_cache.json"
+                 progress: bool = True,
+                 bib: str | None = None) -> list[VerifyResult]:
+    """Verify every bib entry in a paper. Returns list of VerifyResult.
+
+    ``bib`` is an optional path override (CLI flag) layered over ``refscan.json``
+    and the default layout.
+    """
+    from .layout import resolve_layout
+    layout = resolve_layout(paper_dir, bib=bib)
+    bib = layout.bib
+    refs = layout.refs_dir
+    cache_file = layout.verify_cache
     cache = {} if refresh else _load_cache(cache_file)
 
     reset_rate_limit_state()

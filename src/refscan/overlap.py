@@ -11,24 +11,24 @@ from pathlib import Path
 from .textproc import normalize_prose, shingles, strip_latex, tokenize
 
 
-def _load_paper_text(sections_dir: Path) -> dict[str, str]:
+def _load_paper_text(section_files: list[Path]) -> dict[str, str]:
     return {
         f.name: normalize_prose(strip_latex(f.read_text(errors="ignore")))
-        for f in sorted(sections_dir.glob("*.tex"))
+        for f in section_files
     }
 
 
 def detect_overlap(
-    paper_sections: dict[str, Path],
+    paper_sections: dict[str, list[Path]],
     shingle_n: int = 10,
 ) -> dict:
     """Detect n-gram overlap between every pair of papers.
 
-    ``paper_sections`` maps paper label → path to its ``sections/`` directory.
+    ``paper_sections`` maps paper label → list of its section ``.tex`` files.
     Returns a structured dict describing shingles appearing in 2+ papers and
     the maximal runs per paper-pair.
     """
-    corpus = {label: _load_paper_text(d) for label, d in paper_sections.items()}
+    corpus = {label: _load_paper_text(files) for label, files in paper_sections.items()}
 
     # Shingle index: shingle → {paper: {section, ...}}
     shingle_index: dict[tuple[str, ...], dict[str, set[str]]] = defaultdict(

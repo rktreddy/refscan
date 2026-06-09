@@ -151,19 +151,19 @@ def confidence_score(shingle_text: str, run_len: int, num_refs_with_phrase: int)
 
 
 def scan(
-    sections_dir: Path,
+    section_files: list[Path],
     refs_dir: Path,
     cache_dir: Path | None = None,
     shingle_n: int = DEFAULT_SHINGLE_N,
     min_run: int = DEFAULT_MIN_RUN,
     filter_generic: bool = True,
 ) -> dict:
-    """Run a plagiarism scan. Return a dict with findings and metadata."""
+    """Run a plagiarism scan over ``section_files``. Return findings + metadata."""
     cache_dir = cache_dir or (refs_dir.parent / "pdf_text_cache")
     ref_indices, ref_tokens, failed = _index_reference_pdfs(refs_dir, cache_dir, shingle_n)
 
     findings = []
-    for sec_file in sorted(sections_dir.glob("*.tex")):
+    for sec_file in section_files:
         raw = sec_file.read_text(errors="ignore")
         paper_toks = tokenize(normalize_prose(strip_latex(raw)))
         if len(paper_toks) < shingle_n:
