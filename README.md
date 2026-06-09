@@ -18,10 +18,10 @@ One CLI, ten subcommands (details in [Commands](#commands)):
 
 - **`check`** — ⭐ one-shot: run sanity + scan (+ optional verify) and print a **PASS / WARN / FAIL** verdict
 - **`init`** — scaffold `literature/` + a `refscan.json` template
-- **`fetch`** — download cited PDFs from arXiv + Semantic Scholar (parallel)
+- **`fetch`** — download cited PDFs from arXiv, Semantic Scholar, OpenAlex + Unpaywall (parallel)
 - **`track`** — categorize references (downloaded / fetchable / pre-arXiv / skip / verify-exists)
 - **`scan`** — shingle-match prose against references, ranked by a confidence score
-- **`verify`** — flag likely-fabricated or metadata-drifted bib entries against arXiv/S2
+- **`verify`** — flag likely-fabricated or metadata-drifted bib entries against arXiv, S2, OpenAlex + Crossref (all fields)
 - **`sanity-stats`** — bib hygiene report (undefined cites, dupes, missing fields, …), CI-friendly exit code
 - **`watch`** — re-scan on `.tex` save while drafting
 - **`overlap`** — cross-paper self-plagiarism check
@@ -126,7 +126,7 @@ results:
 Scaffold `literature/refs/`, `literature/pdf_text_cache/`, write an initial `reference_tracking.md`, and (if absent) a `refscan.json` config template.
 
 ### `refscan fetch <paper_dir> [--no-s2] [--workers N]`
-Parse `paper/references.bib`. For each entry, try arXiv (by explicit ID if present, otherwise by title+author search), then Semantic Scholar (unless `--no-s2`). Download PDFs into `literature/refs/{BIBKEY}.pdf`. URL resolution is sequential and rate-limited per arXiv/S2 guidelines; downloads run in parallel via a thread pool (default 5 workers, set `--workers 1` for fully sequential). Bib keys that contain path separators or `..` traversal components are reported as `unsafe-key` and skipped, so a reference file can never write outside `literature/refs/`.
+Parse `paper/references.bib`. For each entry, resolve a PDF in order: explicit arXiv ID in the bib → arXiv title/author search → Semantic Scholar (unless `--no-s2`) → OpenAlex open-access PDF → Unpaywall (when the entry has a DOI). Download PDFs into `literature/refs/{BIBKEY}.pdf`. Downloads are validated as real PDFs (`%PDF` header), so open-access landing-page HTML is never saved as a `.pdf`. URL resolution is sequential and rate-limited per arXiv/S2 guidelines; downloads run in parallel via a thread pool (default 5 workers, set `--workers 1` for fully sequential). Bib keys that contain path separators or `..` traversal components are reported as `unsafe-key` and skipped, so a reference file can never write outside `literature/refs/`.
 
 ### `refscan track <paper_dir>`
 Regenerate `literature/reference_tracking.md` based on what's currently in `literature/refs/`. Each entry is bucketed as downloaded / fetchable / pre-arXiv / skip-book / skip-software / verify-exists.
@@ -159,13 +159,21 @@ Detect shared n-word passages across two or more papers. Useful as a self-plagia
 Bib hygiene report. Surfaces undefined cites, unused entries, duplicate keys, duplicate titles, missing required fields, suspicious years, and stub authors. Exits with code 1 on any errors, 0 otherwise — useful in CI. Output: `literature/sanity_report.md`.
 
 ### `refscan verify <paper_dir> [--no-s2] [--refresh] [--out PATH]`
-Check each bib entry against arXiv + Semantic Scholar. Each entry gets a verdict: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (the lookup itself failed — *not* treated as fabricated). Output: `literature/verification_report.md`. Results are cached at `literature/verify_cache.json` and keyed by bib key plus title/author/year, so correcting an entry and re-running picks up the change without `--refresh`; `api-error` results are never cached.
+Check each bib entry against arXiv, Semantic Scholar, OpenAlex, and Crossref — together they index preprints, journals, conference proceedings, and books across all fields, so a real non-arXiv paper (Nature, IEEE, ACM, biomed, humanities) is far less likely to be falsely flagged. Each entry gets a verdict: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (the lookup itself failed — *not* treated as fabricated). Output: `literature/verification_report.md`. Results are cached at `literature/verify_cache.json` and keyed by bib key plus title/author/year, so correcting an entry and re-running picks up the change without `--refresh`; `api-error` results are never cached.
 
-**Semantic Scholar rate limits:** the unauthenticated endpoint throttles aggressively (often after just a few requests). For accurate verification, get a free API key at https://www.semanticscholar.org/product/api and:
+**API keys & etiquette:** OpenAlex and Crossref need no key (refscan uses their polite pools). Identify yourself to them — and to Unpaywall — by setting a contact email:
+
+```bash
+export REFSCAN_CONTACT_EMAIL=you@example.com
+```
+
+**Semantic Scholar rate limits:** only S2's unauthenticated endpoint throttles aggressively (often after just a few requests). For best S2 coverage, get a free API key at https://www.semanticscholar.org/product/api and:
 
 ```bash
 export REFSCAN_S2_API_KEY=<your-key>
 ```
+
+Even without an S2 key, OpenAlex + Crossref keep `verify`/`fetch` working across fields.
 
 Without a key, S2 will likely 429 mid-run; the report flags this and warns that any "not-found" verdicts checked only against arXiv may be false positives for non-arXiv papers (Nature, IEEE, ACM, books).
 
@@ -212,7 +220,7 @@ Your paper isn't in the default `paper/{references.bib,sections}` layout. Point 
 The poppler runtime dependency is missing. Install it: `brew install poppler` (macOS) or `apt install poppler-utils` (Debian/Ubuntu).
 
 **`refscan verify` marks a real paper as "not found".**
-It was likely checked against arXiv only — either Semantic Scholar was disabled (`--no-s2`) or it rate-limited mid-run. Papers not on arXiv (Nature, IEEE, ACM, books) legitimately show as not-found. Set `REFSCAN_S2_API_KEY` (below) and re-run with `--refresh`, and verify the entry on Google Scholar before treating it as fabricated.
+`verify` checks arXiv + Semantic Scholar + OpenAlex + Crossref, so genuine papers in any field are usually found. A real not-found most often means a metadata typo in your bib, or a niche/very recent work — fix the bib (`refscan fetch`/`verify` show the closest match) and re-run with `--refresh`, and check Google Scholar before treating it as fabricated.
 
 **`refscan verify` reports `api-error`.**
 The arXiv/Semantic Scholar request itself failed (network blip, timeout). This is *not* a fabrication signal — `api-error` results are never cached, so just re-run.
@@ -237,7 +245,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-142 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch, verify (verdicts + caching), sanity checks, tracking/config, layout resolution + auto-detection, the `check` verdict, cross-paper overlap, and the release flow. Lint with `ruff check`.
+159 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching), sanity checks, tracking/config, layout resolution + auto-detection, the `check` verdict, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 ## Versioning & changelog
 

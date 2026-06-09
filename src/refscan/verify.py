@@ -22,10 +22,14 @@ from pathlib import Path
 from .bib import BibEntry, parse_bib, ref_pdf_path
 from .fetch import (
     ARXIV_DELAY_S,
+    CROSSREF_DELAY_S,
     DEFAULT_USER_AGENT,
+    OPENALEX_DELAY_S,
     S2_API_KEY_ENV,
     S2_DELAY_S,
     arxiv_search_metadata,
+    crossref_search_metadata,
+    openalex_search_metadata,
     reset_rate_limit_state,
     semantic_scholar_search_metadata,
     was_rate_limited,
@@ -148,6 +152,25 @@ def verify_entry(entry: BibEntry, use_s2: bool = True,
         else:
             for h in s2_hits:
                 candidates.append(_score_candidate(entry, h, "s2"))
+    # OpenAlex covers all fields (journals, books, non-arXiv) — the main reason a
+    # real non-CS paper would otherwise show up as "not found".
+    oa_hits = openalex_search_metadata(entry.title, entry.first_author, user_agent)
+    if sleep:
+        time.sleep(OPENALEX_DELAY_S)
+    if oa_hits is None:
+        errored = True
+    else:
+        for h in oa_hits:
+            candidates.append(_score_candidate(entry, h, "openalex"))
+    # Crossref: canonical DOI registry, strong for journal/conference papers.
+    cr_hits = crossref_search_metadata(entry.title, entry.first_author, user_agent)
+    if sleep:
+        time.sleep(CROSSREF_DELAY_S)
+    if cr_hits is None:
+        errored = True
+    else:
+        for h in cr_hits:
+            candidates.append(_score_candidate(entry, h, "crossref"))
     if not candidates:
         # No candidates from any source. If a queried API actually failed (vs.
         # returning a genuine empty result), report api-error instead of
@@ -305,11 +328,12 @@ _VERDICT_HEADINGS = {
 
 _VERDICT_INSTRUCTIONS = {
     "not-found": (
-        "These entries returned no convincing match from arXiv or Semantic Scholar. "
-        "Verify on Google Scholar before trusting. **If a paper does not exist, "
-        "remove the citation from `paper/references.bib` and from any `\\cite{...}` "
-        "site in your `paper/sections/`.** Fabricated citations are a serious "
-        "research-integrity issue."
+        "These entries returned no convincing match from arXiv, Semantic Scholar, "
+        "OpenAlex, or Crossref (which together index journals, books, conference "
+        "proceedings, and preprints across all fields). Verify on Google Scholar "
+        "before trusting. **If a paper does "
+        "not exist, remove the citation from your bib and from any `\\cite{...}` "
+        "site.** Fabricated citations are a serious research-integrity issue."
     ),
     "weak-match": (
         "API returned a related-looking paper but with significant title divergence. "
@@ -321,7 +345,7 @@ _VERDICT_INSTRUCTIONS = {
         "The right paper appears to exist, but the bib entry's author or year "
         "diverges. Update the bib to match the API result."
     ),
-    "verified": "Bib metadata matches a real paper on arXiv or Semantic Scholar. No action needed.",
+    "verified": "Bib metadata matches a real paper on arXiv, Semantic Scholar, or OpenAlex. No action needed.",
     "skipped": "Books, software documentation, and entries with no title are not verified by this command.",
     "api-error": "The API request failed. Re-run with `--refresh` to retry.",
 }
@@ -348,11 +372,11 @@ def render_verification_md(paper_label: str, results: list[VerifyResult],
         out.append(f"_Scan date: {scan_date}_\n")
     out.append(f"_Total bib entries: **{len(results)}**_\n")
     if not s2_used:
-        out.append("_Sources queried: **arXiv only** (`--no-s2`)._\n\n")
+        out.append("_Sources queried: **arXiv + OpenAlex + Crossref** (`--no-s2`)._\n\n")
     elif s2_rate_limited:
-        out.append("_Sources queried: arXiv (Semantic Scholar **rate-limited mid-run**, see caveat below)._\n\n")
+        out.append("_Sources queried: arXiv + OpenAlex + Crossref (Semantic Scholar **rate-limited mid-run**, see caveat below)._\n\n")
     else:
-        out.append("_Sources queried: arXiv + Semantic Scholar._\n\n")
+        out.append("_Sources queried: arXiv + Semantic Scholar + OpenAlex + Crossref._\n\n")
 
     if s2_rate_limited or not s2_used:
         out.append("## ⚠️ API caveat\n\n")

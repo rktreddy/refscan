@@ -15,10 +15,27 @@ from .bib import BibEntry, ref_pdf_path
 
 ARXIV_API = "https://export.arxiv.org/api/query"
 S2_API = "https://api.semanticscholar.org/graph/v1/paper/search"
+OPENALEX_API = "https://api.openalex.org/works"
+CROSSREF_API = "https://api.crossref.org/works"
+UNPAYWALL_API = "https://api.unpaywall.org/v2"
 DEFAULT_USER_AGENT = "refscan/0.2 (mailto:rktreddy@gmail.com)"
 ARXIV_DELAY_S = 3.0  # arXiv API recommends ≥3s between requests
 S2_DELAY_S = 3.0     # Semantic Scholar unauthenticated rate is strict; 3s is conservative
+OPENALEX_DELAY_S = 1.0   # OpenAlex polite pool is generous; 1s is courteous
+CROSSREF_DELAY_S = 1.0   # Crossref polite pool
+UNPAYWALL_DELAY_S = 1.0  # Unpaywall
 S2_API_KEY_ENV = "REFSCAN_S2_API_KEY"
+CONTACT_EMAIL_ENV = "REFSCAN_CONTACT_EMAIL"
+_DEFAULT_CONTACT_EMAIL = "rktreddy@gmail.com"
+
+
+def _contact_email() -> str:
+    """Contact email for API polite pools (OpenAlex ``mailto``, Unpaywall).
+
+    Overridable via ``$REFSCAN_CONTACT_EMAIL`` so public users identify with
+    their own address rather than the maintainer's.
+    """
+    return os.environ.get(CONTACT_EMAIL_ENV, "").strip() or _DEFAULT_CONTACT_EMAIL
 
 # Module-level flag: once we get a 429 from S2, stop hammering it for the rest
 # of this run.
@@ -250,11 +267,157 @@ def semantic_scholar_search_metadata(title: str, author: str = "",
     return out
 
 
+def openalex_search_metadata(title: str, author: str = "",
+                              user_agent: str = DEFAULT_USER_AGENT,
+                              limit: int = 5) -> list[dict] | None:
+    """Query OpenAlex (~250M works, all fields) and return up to ``limit`` dicts.
+
+    Each dict has ``title``, ``authors``, ``year``, ``arxiv_id`` (usually ""),
+    ``doi``. Returns ``None`` on request failure (vs ``[]`` for no results).
+    """
+    if not title:
+        return []
+    q = f"{title} {author}".strip()
+    params = urllib.parse.urlencode({
+        "search": q, "per-page": limit, "mailto": _contact_email(),
+    })
+    data, _ = _http_get(f"{OPENALEX_API}?{params}", user_agent, timeout=30)
+    if not data:
+        return None
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except json.JSONDecodeError:
+        return None
+    out = []
+    for w in payload.get("results", []):
+        ctitle = w.get("title") or w.get("display_name") or ""
+        authors = [a.get("author", {}).get("display_name", "")
+                   for a in (w.get("authorships") or []) if a.get("author")]
+        authors = [a for a in authors if a]
+        out.append({
+            "title": ctitle,
+            "authors": authors,
+            "year": str(w.get("publication_year") or ""),
+            "arxiv_id": "",
+            "doi": (w.get("doi") or "").replace("https://doi.org/", ""),
+        })
+    return out
+
+
+def openalex_pdf_url(title: str, author: str = "",
+                      user_agent: str = DEFAULT_USER_AGENT,
+                      min_jaccard: float = 0.4) -> str | None:
+    """Query OpenAlex; return a direct open-access PDF URL on confident match."""
+    if not title:
+        return None
+    q = f"{title} {author}".strip()
+    params = urllib.parse.urlencode({
+        "search": q, "per-page": "5", "mailto": _contact_email(),
+    })
+    data, _ = _http_get(f"{OPENALEX_API}?{params}", user_agent, timeout=30)
+    if not data:
+        return None
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except json.JSONDecodeError:
+        return None
+    title_words = set(re.findall(r"[a-z]+", title.lower()))
+    if not title_words:
+        return None
+    for w in payload.get("results", []):
+        ctitle = (w.get("title") or "").lower()
+        ctitle_words = set(re.findall(r"[a-z]+", ctitle))
+        if not ctitle_words:
+            continue
+        jaccard = len(title_words & ctitle_words) / len(title_words | ctitle_words)
+        if jaccard < min_jaccard:
+            continue
+        for loc_key in ("best_oa_location", "primary_location"):
+            loc = w.get(loc_key) or {}
+            if loc.get("pdf_url"):
+                return loc["pdf_url"]
+        oa = w.get("open_access") or {}
+        if oa.get("oa_url"):
+            return oa["oa_url"]  # may be a landing page; download_pdf sniffs %PDF
+    return None
+
+
+def crossref_search_metadata(title: str, author: str = "",
+                              user_agent: str = DEFAULT_USER_AGENT,
+                              limit: int = 5) -> list[dict] | None:
+    """Query Crossref (canonical DOI registry for journals/proceedings).
+
+    Each dict has ``title``, ``authors``, ``year``, ``arxiv_id`` (""), ``doi``.
+    Returns ``None`` on request failure (vs ``[]`` for no results).
+    """
+    if not title:
+        return []
+    q = f"{title} {author}".strip()
+    params = urllib.parse.urlencode({
+        "query.bibliographic": q, "rows": limit, "mailto": _contact_email(),
+    })
+    data, _ = _http_get(f"{CROSSREF_API}?{params}", user_agent, timeout=30)
+    if not data:
+        return None
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except json.JSONDecodeError:
+        return None
+    out = []
+    for it in payload.get("message", {}).get("items", []):
+        titles = it.get("title") or []
+        authors = []
+        for a in it.get("author", []) or []:
+            name = f"{a.get('given', '')} {a.get('family', '')}".strip()
+            if name:
+                authors.append(name)
+        year = ""
+        for key in ("issued", "published", "published-print", "published-online", "created"):
+            dp = (it.get(key) or {}).get("date-parts") or []
+            if dp and dp[0] and dp[0][0]:
+                year = str(dp[0][0])
+                break
+        out.append({
+            "title": titles[0] if titles else "",
+            "authors": authors,
+            "year": year,
+            "arxiv_id": "",
+            "doi": it.get("DOI", "") or "",
+        })
+    return out
+
+
+def unpaywall_pdf_url(doi: str, user_agent: str = DEFAULT_USER_AGENT) -> str | None:
+    """Given a DOI, return the best open-access PDF URL via Unpaywall, else None."""
+    doi = (doi or "").strip()
+    doi = re.sub(r"^https?://(dx\.)?doi\.org/", "", doi, flags=re.IGNORECASE)
+    if not doi:
+        return None
+    params = urllib.parse.urlencode({"email": _contact_email()})
+    data, _ = _http_get(f"{UNPAYWALL_API}/{urllib.parse.quote(doi)}?{params}",
+                        user_agent, timeout=30)
+    if not data:
+        return None
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except json.JSONDecodeError:
+        return None
+    loc = payload.get("best_oa_location") or {}
+    return loc.get("url_for_pdf") or None
+
+
 def download_pdf(url: str, dest: Path, user_agent: str = DEFAULT_USER_AGENT,
                  min_bytes: int = 5000) -> bool:
-    """Download a PDF URL to ``dest``. Rejects responses smaller than ``min_bytes``."""
+    """Download a PDF URL to ``dest``.
+
+    Rejects responses smaller than ``min_bytes`` or that don't look like a PDF
+    (no ``%PDF-`` header in the first KB) — guards against saving HTML landing
+    pages returned by some open-access URLs.
+    """
     data, _ = _http_get(url, user_agent, timeout=60)
     if data is None or len(data) < min_bytes:
+        return False
+    if b"%PDF-" not in data[:1024]:
         return False
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
@@ -266,9 +429,10 @@ def resolve_pdf_url(entry: BibEntry, user_agent: str = DEFAULT_USER_AGENT,
                      sleep: bool = True) -> tuple[str | None, str | None]:
     """Resolve a downloadable PDF URL for ``entry`` without downloading.
 
-    Tries (in order): explicit arXiv ID in bib, arXiv search, Semantic Scholar.
-    Returns (url, source_label) or (None, None). Sleeps between API calls
-    when ``sleep`` is True.
+    Tries (in order): explicit arXiv ID in bib, arXiv search, Semantic Scholar,
+    OpenAlex open-access PDF, and Unpaywall (when the bib entry has a DOI).
+    Returns (url, source_label) or (None, None). Sleeps between API calls when
+    ``sleep`` is True.
     """
     aid = entry.explicit_arxiv_id
     if aid:
@@ -286,6 +450,20 @@ def resolve_pdf_url(entry: BibEntry, user_agent: str = DEFAULT_USER_AGENT,
             time.sleep(S2_DELAY_S)
         if pdf_url:
             return pdf_url, "semantic-scholar"
+
+    oa_url = openalex_pdf_url(entry.title, entry.first_author, user_agent)
+    if sleep:
+        time.sleep(OPENALEX_DELAY_S)
+    if oa_url:
+        return oa_url, "openalex"
+
+    doi = entry.doi
+    if doi:
+        up_url = unpaywall_pdf_url(doi, user_agent)
+        if sleep:
+            time.sleep(UNPAYWALL_DELAY_S)
+        if up_url:
+            return up_url, "unpaywall"
 
     return None, None
 
