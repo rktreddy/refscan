@@ -8,8 +8,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from refscan.bib import BibEntry
 from refscan.fetch import (
     fetch_paper,

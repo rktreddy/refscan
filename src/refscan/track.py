@@ -1,40 +1,96 @@
 """Per-paper reference tracking markdown generator."""
 from __future__ import annotations
 
-import re
+import json
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .bib import BibEntry, parse_bib
 
-# Generic-title markers indicating likely-fabricated references
-_GENERIC_FABRICATED_MARKERS = (
-    "advances in neuromorphic",
-    "coupled oscillator networks for",
-    "coupling strength effects in oscillator",
-    "memristor-based analog computing",
-    "hardware-friendly algorithm design for",
-    "role of analog memory in",
-    "sound and heat revolutions",
-    "information-theoretic analysis of generalization in neural networks",
-    "learning dynamical systems from trajectories",
-    "silicon photonic neural networks for efficient",
-)
+# Optional per-paper config file. Lives at the paper-dir root so a paper can
+# supply its own title/key heuristics without baking them into the package.
+CONFIG_FILENAME = "refscan.json"
 
-_BOOK_TITLE_MARKERS = (
-    "nonlinear dynamics and chaos",
-    "elements of information theory",
-    "solving ordinary differential",
-    "numerical methods for ordinary",
-    "qualitative theory of differential",
-    "analog integrated circuit design",
-    "op amps for",
-    "switched-capacitor",
-    "linear programming",
-    "perceptrons: an introduction",
-)
 
-_SOFTWARE_KEYS = {"jax", "xla", "pytorch", "tensorrt", "aihwkit"}
-_SOFTWARE_TITLE_MARKERS = ("tensorrt", "python+numpy")
+@dataclass(frozen=True)
+class TrackConfig:
+    """Per-paper categorization heuristics, all optional and lowercase-matched.
+
+    With an empty config (the default), categorization relies only on general
+    BibTeX signals — entry type (``@book``/``@inbook`` → skip-book, ``@software``
+    → skip-software) and publication year. These marker lists let a specific
+    paper augment that with its own substring/key heuristics:
+
+      * ``book_title_markers``    — title substrings → ``skip-book``
+      * ``software_keys``         — exact bib keys  → ``skip-software``
+      * ``software_title_markers``— title substrings → ``skip-software``
+      * ``suspect_title_markers`` — title substrings on 2015+ entries →
+        ``verify-exists``. This is a coarse static heuristic; ``refscan verify``
+        is the robust way to detect fabricated references.
+    """
+    book_title_markers: tuple[str, ...] = ()
+    software_keys: frozenset[str] = field(default_factory=frozenset)
+    software_title_markers: tuple[str, ...] = ()
+    suspect_title_markers: tuple[str, ...] = ()
+
+
+DEFAULT_CONFIG = TrackConfig()
+
+_CONFIG_TEMPLATE = {
+    "_comment": (
+        "Optional per-paper heuristics for `refscan track`/`verify`. All lists "
+        "are lowercase substring/key matches and may be left empty. `refscan "
+        "verify` is the robust way to detect fabricated references; "
+        "suspect_title_markers is only a coarse offline pre-filter."
+    ),
+    "book_title_markers": [],
+    "software_keys": [],
+    "software_title_markers": [],
+    "suspect_title_markers": [],
+}
+
+
+def write_config_template(paper_dir: Path) -> Path | None:
+    """Write a commented ``refscan.json`` template if none exists.
+
+    Returns the path if written, or ``None`` if a config already exists.
+    """
+    path = paper_dir / CONFIG_FILENAME
+    if path.exists():
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(_CONFIG_TEMPLATE, indent=2) + "\n")
+    return path
+
+
+def _lower_tuple(values: object) -> tuple[str, ...]:
+    if not isinstance(values, list):
+        return ()
+    return tuple(str(v).lower() for v in values)
+
+
+def load_config(paper_dir: Path) -> TrackConfig:
+    """Load ``<paper_dir>/refscan.json`` if present, else return empty defaults.
+
+    A missing or malformed file is treated as "no extra heuristics" rather than
+    an error — categorization still works from general BibTeX signals.
+    """
+    path = paper_dir / CONFIG_FILENAME
+    if not path.exists():
+        return DEFAULT_CONFIG
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return DEFAULT_CONFIG
+    if not isinstance(data, dict):
+        return DEFAULT_CONFIG
+    return TrackConfig(
+        book_title_markers=_lower_tuple(data.get("book_title_markers")),
+        software_keys=frozenset(_lower_tuple(data.get("software_keys"))),
+        software_title_markers=_lower_tuple(data.get("software_title_markers")),
+        suspect_title_markers=_lower_tuple(data.get("suspect_title_markers")),
+    )
+
 
 _BUCKET_HEADINGS = {
     "verify-exists": "⚠️ Verify existence first (may be fabricated)",
@@ -76,22 +132,28 @@ _BUCKET_ORDER = (
 )
 
 
-def categorize(entry: BibEntry, pdf_present: bool) -> str:
-    """Assign a category bucket for a bib entry."""
+def categorize(entry: BibEntry, pdf_present: bool,
+               config: TrackConfig = DEFAULT_CONFIG) -> str:
+    """Assign a category bucket for a bib entry.
+
+    Uses general BibTeX signals (entry type, year) plus any paper-specific
+    title/key markers supplied via ``config``.
+    """
     if pdf_present:
         return "downloaded"
     t = entry.title.lower()
     k = entry.key.lower()
     et = entry.entry_type
 
-    if k in _SOFTWARE_KEYS or any(m in t for m in _SOFTWARE_TITLE_MARKERS):
+    if et == "software" or k in config.software_keys \
+            or any(m in t for m in config.software_title_markers):
         return "skip-software"
-    if et in ("book", "inbook") or any(m in t for m in _BOOK_TITLE_MARKERS):
+    if et in ("book", "inbook") or any(m in t for m in config.book_title_markers):
         return "skip-book"
     if entry.year.isdigit() and int(entry.year) < 2000:
         return "pre-arxiv"
     if entry.year.isdigit() and int(entry.year) >= 2015:
-        if any(m in t for m in _GENERIC_FABRICATED_MARKERS):
+        if any(m in t for m in config.suspect_title_markers):
             return "verify-exists"
     return "fetchable"
 
@@ -112,17 +174,24 @@ def generate_tracking_md(
     refs_dir: Path | None = None,
     output_path: Path | None = None,
     scan_date: str = "",
+    config: TrackConfig | None = None,
 ) -> tuple[Path, dict[str, int]]:
-    """Write a `reference_tracking.md` for one paper. Return (path, counts)."""
+    """Write a `reference_tracking.md` for one paper. Return (path, counts).
+
+    ``config`` defaults to whatever ``<paper_dir>/refscan.json`` provides (empty
+    if absent). Pass an explicit ``TrackConfig`` to override.
+    """
     bib_path = bib_path or (paper_dir / "paper" / "references.bib")
     refs_dir = refs_dir or (paper_dir / "literature" / "refs")
     output_path = output_path or (paper_dir / "literature" / "reference_tracking.md")
+    if config is None:
+        config = load_config(paper_dir)
 
     entries = parse_bib(bib_path)
     bucketed: dict[str, list[BibEntry]] = {b: [] for b in _BUCKET_ORDER}
     for e in entries:
         pdf_present = (refs_dir / f"{e.key}.pdf").exists()
-        bucketed[categorize(e, pdf_present)].append(e)
+        bucketed[categorize(e, pdf_present, config)].append(e)
 
     out: list[str] = [f"# {paper_label} — Reference PDF Tracking\n"]
     if scan_date:

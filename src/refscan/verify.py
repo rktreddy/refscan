@@ -31,7 +31,7 @@ from .fetch import (
     semantic_scholar_search_metadata,
 )
 from .textproc import title_word_match
-from .track import categorize
+from .track import categorize, load_config
 
 
 VERIFIED_TITLE_OVERLAP = 0.7
@@ -130,19 +130,29 @@ def verify_entry(entry: BibEntry, use_s2: bool = True,
     if not entry.title:
         return None, [], "no-title"
     candidates: list[APIResult] = []
+    errored = False
     arxiv_hits = arxiv_search_metadata(entry.title, entry.first_author, user_agent)
     if sleep:
         time.sleep(ARXIV_DELAY_S)
-    for h in arxiv_hits:
-        candidates.append(_score_candidate(entry, h, "arxiv"))
+    if arxiv_hits is None:
+        errored = True
+    else:
+        for h in arxiv_hits:
+            candidates.append(_score_candidate(entry, h, "arxiv"))
     if use_s2:
         s2_hits = semantic_scholar_search_metadata(entry.title, entry.first_author, user_agent)
         if sleep:
             time.sleep(S2_DELAY_S)
-        for h in s2_hits:
-            candidates.append(_score_candidate(entry, h, "s2"))
+        if s2_hits is None:
+            errored = True
+        else:
+            for h in s2_hits:
+                candidates.append(_score_candidate(entry, h, "s2"))
     if not candidates:
-        return None, [], None
+        # No candidates from any source. If a queried API actually failed (vs.
+        # returning a genuine empty result), report api-error instead of
+        # silently calling the entry "not found / likely fabricated".
+        return None, [], ("api-error" if errored else None)
     candidates.sort(key=lambda c: -c.title_overlap)
     return candidates[0], candidates[1:5], None
 
@@ -192,6 +202,7 @@ def verify_paper(paper_dir: Path, use_s2: bool = True, refresh: bool = False,
     cache = {} if refresh else _load_cache(cache_file)
 
     reset_rate_limit_state()
+    config = load_config(paper_dir)
     import os as _os
     has_s2_key = bool(_os.environ.get(S2_API_KEY_ENV, "").strip())
     if progress and use_s2 and not has_s2_key:
@@ -203,7 +214,7 @@ def verify_paper(paper_dir: Path, use_s2: bool = True, refresh: bool = False,
     results: list[VerifyResult] = []
     for i, entry in enumerate(entries, 1):
         pdf_present = (refs / f"{entry.key}.pdf").exists()
-        bucket = categorize(entry, pdf_present=False)  # ignore PDF for skip logic
+        bucket = categorize(entry, pdf_present=False, config=config)  # ignore PDF for skip logic
         if bucket in ("skip-book", "skip-software"):
             results.append(VerifyResult(
                 key=entry.key, bib_title=entry.title,
@@ -233,6 +244,13 @@ def verify_paper(paper_dir: Path, use_s2: bool = True, refresh: bool = False,
                 bib_pdf_present=pdf_present, verdict="skipped",
                 skip_reason="no-title",
             )
+        elif err == "api-error":
+            r = VerifyResult(
+                key=entry.key, bib_title=entry.title,
+                bib_first_author=entry.first_author, bib_year=entry.year,
+                bib_pdf_present=pdf_present, verdict="api-error",
+                skip_reason="API request failed",
+            )
         else:
             verdict = _verdict_from(best)
             r = VerifyResult(
@@ -242,8 +260,10 @@ def verify_paper(paper_dir: Path, use_s2: bool = True, refresh: bool = False,
                 best_match=best, other_matches=others,
             )
         results.append(r)
-        cache[entry.key] = _serialize_result(r)
-        _save_cache(cache_file, cache)  # incremental save
+        # Don't cache transient API failures — leave them to retry on re-run.
+        if r.verdict != "api-error":
+            cache[entry.key] = _serialize_result(r)
+            _save_cache(cache_file, cache)  # incremental save
         if progress:
             extra = " [s2 rate-limited]" if _fetch_mod._s2_rate_limited else ""
             print(r.verdict + extra)

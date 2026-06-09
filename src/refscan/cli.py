@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .bib import parse_bib
-from .fetch import ARXIV_DELAY_S, fetch_entry, fetch_paper
+from .fetch import fetch_paper
 from .overlap import detect_overlap, render_overlap_md
 from .release import execute as release_execute, plan_release
 from .sanity import render_sanity_md, run_sanity, summarize
@@ -20,7 +20,7 @@ from .scan import (
     render_findings_terminal,
     scan,
 )
-from .track import generate_tracking_md
+from .track import generate_tracking_md, write_config_template
 from .verify import render_verification_md, verify_paper
 
 
@@ -40,6 +40,9 @@ def cmd_init(args: argparse.Namespace) -> int:
     bib = paper_dir / "paper" / "references.bib"
     if not bib.exists():
         print(f"warning: no bib file found at {bib}", file=sys.stderr)
+    cfg = write_config_template(paper_dir)
+    if cfg:
+        print(f"wrote config template {cfg}")
     # Write an initial tracking file
     generate_tracking_md(paper_dir, _paper_label(paper_dir), scan_date=_today())
     print(f"initialized {lit}")

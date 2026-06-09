@@ -5,7 +5,7 @@ Reference-PDF collection and plagiarism scanning for research papers.
 Use cases:
 
 - **Reviewing a paper draft before submission:** download every cited reference as a PDF, then shingle-match your paper's prose against them to find passages tracking too closely to source text.
-- **Tracking a long bibliography:** auto-categorize references by status (downloaded / fetchable / looks-fabricated / skip) in a per-paper markdown tracker.
+- **Tracking a long bibliography:** auto-categorize references by status (downloaded / fetchable / pre-arXiv / skip) in a per-paper markdown tracker, with optional per-paper heuristics for books, software, and suspect titles.
 - **Checking for self-plagiarism across a research program:** given multiple paper directories, detect overlapping passages.
 
 Stdlib-only at runtime (uses `pdftotext` from poppler for PDF text extraction).
@@ -40,6 +40,7 @@ paper_X/
 │       ├── introduction.tex
 │       ├── method.tex
 │       └── ...
+├── refscan.json         # optional per-paper categorization heuristics
 └── literature/           # created by `refscan init`
     ├── refs/             # downloaded reference PDFs, named {BIBKEY}.pdf
     ├── pdf_text_cache/   # extracted text, keyed by PDF mtime
@@ -50,13 +51,26 @@ paper_X/
 ## Commands
 
 ### `refscan init <paper_dir>`
-Scaffold `literature/refs/`, `literature/pdf_text_cache/`, and write an initial `reference_tracking.md`.
+Scaffold `literature/refs/`, `literature/pdf_text_cache/`, write an initial `reference_tracking.md`, and (if absent) a `refscan.json` config template.
 
 ### `refscan fetch <paper_dir> [--no-s2] [--workers N]`
 Parse `paper/references.bib`. For each entry, try arXiv (by explicit ID if present, otherwise by title+author search), then Semantic Scholar (unless `--no-s2`). Download PDFs into `literature/refs/{BIBKEY}.pdf`. URL resolution is sequential and rate-limited per arXiv/S2 guidelines; downloads run in parallel via a thread pool (default 5 workers, set `--workers 1` for fully sequential).
 
 ### `refscan track <paper_dir>`
-Regenerate `literature/reference_tracking.md` based on what's currently in `literature/refs/`.
+Regenerate `literature/reference_tracking.md` based on what's currently in `literature/refs/`. Each entry is bucketed as downloaded / fetchable / pre-arXiv / skip-book / skip-software / verify-exists.
+
+Categorization uses general BibTeX signals out of the box — `@book`/`@inbook` → skip-book, `@software` → skip-software, pre-2000 → pre-arXiv. Papers with their own conventions can add heuristics in an optional **`refscan.json`** at the paper-dir root (all lists are lowercase substring/key matches, all optional):
+
+```json
+{
+  "book_title_markers": ["nonlinear dynamics and chaos"],
+  "software_keys": ["jax", "pytorch"],
+  "software_title_markers": ["tensorrt"],
+  "suspect_title_markers": ["coupled oscillator networks for"]
+}
+```
+
+`suspect_title_markers` flags 2015+ entries whose titles match into a **verify-exists** bucket — a coarse offline pre-filter. For robust fabrication detection, use `refscan verify`, which checks every entry against arXiv + Semantic Scholar.
 
 ### `refscan scan <paper_dir> [--shingle-n N] [--min-run M] [--no-filter] [--out PATH]`
 Extract text from every reference PDF, then shingle-match (sliding N-word windows) against each LaTeX section in `paper/sections/`. Write a findings report ranked by **confidence score** — a 0–1 metric combining run length, non-stopword density, and phrase rarity across the cited reference corpus. The report opens with a **Top N concerning matches** table for quick triage, followed by all findings grouped by reference. Default shingle size is 6 words.

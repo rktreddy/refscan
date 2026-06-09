@@ -139,11 +139,16 @@ def semantic_scholar_pdf_url(title: str, author: str = "",
 
 def arxiv_search_metadata(title: str, author: str = "",
                            user_agent: str = DEFAULT_USER_AGENT,
-                           max_results: int = 5) -> list[dict]:
+                           max_results: int = 5) -> list[dict] | None:
     """Query arXiv and return up to ``max_results`` entries as dicts.
 
     Each dict has: ``title``, ``authors`` (list of strings), ``year`` (str or ""),
     ``arxiv_id`` (str or "").
+
+    Returns ``None`` if the request itself failed (network error, HTTP error,
+    or unparseable response) so callers can distinguish a genuine "no results"
+    (``[]``) from "we could not reach the API". An empty title also yields
+    ``[]`` (nothing was asked).
     """
     title_clean = re.sub(r"[\\$_^{}]", " ", title)
     title_clean = re.sub(r"\s+", " ", title_clean).strip()
@@ -158,11 +163,11 @@ def arxiv_search_metadata(title: str, author: str = "",
     })
     data, _ = _http_get(f"{ARXIV_API}?{params}", user_agent, timeout=20)
     if not data:
-        return []
+        return None
     try:
         tree = ET.fromstring(data.decode("utf-8"))
     except ET.ParseError:
-        return []
+        return None
     ns = {"atom": "http://www.w3.org/2005/Atom"}
     out = []
     for entry in tree.findall("atom:entry", ns):
@@ -192,11 +197,16 @@ def arxiv_search_metadata(title: str, author: str = "",
 
 def semantic_scholar_search_metadata(title: str, author: str = "",
                                       user_agent: str = DEFAULT_USER_AGENT,
-                                      limit: int = 5) -> list[dict]:
+                                      limit: int = 5) -> list[dict] | None:
     """Query Semantic Scholar and return up to ``limit`` entries as dicts.
 
     Each dict has: ``title``, ``authors`` (list of strings), ``year`` (str or ""),
     ``arxiv_id`` (str or ""), ``doi`` (str or "").
+
+    Returns ``None`` if the request itself failed (network/HTTP error or
+    unparseable response). An empty title and the rate-limit skip both yield
+    ``[]`` — a 429 is surfaced separately via ``_s2_rate_limited`` and is an
+    intentional skip, not a hard error.
     """
     global _s2_rate_limited
     if not title or _s2_rate_limited:
@@ -213,11 +223,11 @@ def semantic_scholar_search_metadata(title: str, author: str = "",
         _s2_rate_limited = True
         return []
     if not data:
-        return []
+        return None
     try:
         payload = json.loads(data.decode("utf-8"))
     except json.JSONDecodeError:
-        return []
+        return None
     out = []
     for c in payload.get("data", []):
         ctitle = c.get("title") or ""

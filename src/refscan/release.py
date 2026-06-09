@@ -183,11 +183,11 @@ def execute(plan: ReleasePlan) -> int:
         print("\n  [dry-run] would now:")
         print(f"    - update pyproject.toml: version → {plan.new_version}")
         print(f"    - update src/refscan/__init__.py: __version__ → {plan.new_version}")
-        print(f"    - git add pyproject.toml src/refscan/__init__.py")
+        print("    - git add pyproject.toml src/refscan/__init__.py")
         print(f"    - git commit -m \"v{plan.new_version}: ...\" (you'll be prompted to write the body)")
         print(f"    - git tag -a v{plan.new_version}")
         if plan.push:
-            print(f"    - git push origin main")
+            print("    - git push origin main")
             print(f"    - git push origin v{plan.new_version}")
         return 0
 

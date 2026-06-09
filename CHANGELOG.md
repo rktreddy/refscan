@@ -5,6 +5,40 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **`refscan track` categorization is now config-driven.** Paper-specific
+  title/key heuristics that were hardcoded in `track.py` (a list of the
+  analogue-computing paper's suspected-fabricated titles, book titles, and
+  software keys) are moved out of the package. Categorization now relies on
+  general BibTeX signals (`@book`/`@inbook` → skip-book, `@software` →
+  skip-software, pre-2000 → pre-arXiv) plus optional per-paper markers loaded
+  from `<paper_dir>/refscan.json`: `book_title_markers`, `software_keys`,
+  `software_title_markers`, `suspect_title_markers`. A missing or malformed
+  config is treated as "no extra heuristics", so the tool works the same on
+  any paper with zero configuration. For robust fabrication detection, prefer
+  `refscan verify` over the static `suspect_title_markers` pre-filter.
+- `categorize()` and `generate_tracking_md()` gained an optional `config`
+  parameter (`TrackConfig`); `verify` now also respects the paper's config for
+  its skip-book/skip-software logic.
+
+### Added
+- `refscan init` writes a `refscan.json` template (empty heuristics) when none
+  exists, documenting the available keys.
+- `refscan.track` exposes `TrackConfig`, `load_config()`, and
+  `write_config_template()`.
+
+### Fixed
+- **`refscan verify` no longer mislabels a transient API failure as a
+  fabricated reference.** arXiv/Semantic Scholar request failures (network,
+  HTTP, or unparseable response) now yield an `api-error` verdict instead of
+  `not-found` ("likely fabricated"), and such results are not cached so a
+  re-run retries them. A partial failure (one source down, the other returns a
+  match) still produces a real verdict.
+- Ruff lint errors cleared (unused imports in `cli.py`/`track.py`, placeholder
+  f-strings in `release.py`, unused `pytest` import in `tests/test_fetch.py`).
+
 ## [0.8.1] — 2026-04-24
 
 ### Changed

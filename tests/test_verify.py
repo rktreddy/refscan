@@ -5,6 +5,8 @@ favor of direct testing of the pure scoring + verdict functions.
 """
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from refscan.bib import BibEntry
 from refscan.verify import (
     APIResult,
@@ -14,6 +16,7 @@ from refscan.verify import (
     _title_overlap,
     _verdict_from,
     render_verification_md,
+    verify_entry,
 )
 
 
@@ -108,6 +111,41 @@ def test_verdict_from_not_found_low_overlap() -> None:
 
 def test_verdict_from_none() -> None:
     assert _verdict_from(None) == "not-found"
+
+
+def test_verify_entry_api_error_when_source_fails_and_no_candidates() -> None:
+    # arXiv request failed (None) and S2 returned nothing -> api-error, not
+    # a false "not found / likely fabricated".
+    e = BibEntry("k", "article", {"title": "Some Real Paper", "author": "X", "year": "2020"})
+    with patch("refscan.verify.arxiv_search_metadata", return_value=None), \
+         patch("refscan.verify.semantic_scholar_search_metadata", return_value=[]):
+        best, others, err = verify_entry(e, sleep=False)
+    assert best is None
+    assert err == "api-error"
+
+
+def test_verify_entry_not_found_when_apis_genuinely_empty() -> None:
+    # Both sources reachable but returned no matches -> genuine not-found (no error).
+    e = BibEntry("k", "article", {"title": "Imaginary Paper", "author": "X", "year": "2020"})
+    with patch("refscan.verify.arxiv_search_metadata", return_value=[]), \
+         patch("refscan.verify.semantic_scholar_search_metadata", return_value=[]):
+        best, others, err = verify_entry(e, sleep=False)
+    assert best is None
+    assert err is None  # -> _verdict_from(None) == "not-found"
+
+
+def test_verify_entry_partial_failure_still_yields_candidate() -> None:
+    # arXiv failed but S2 returned a strong match -> no error, real verdict.
+    e = BibEntry("k", "article", {"title": "Neural Ordinary Differential Equations",
+                                   "author": "Chen", "year": "2018"})
+    s2_hit = {"title": "Neural Ordinary Differential Equations",
+              "authors": ["Chen"], "year": "2018", "arxiv_id": "1806.07366"}
+    with patch("refscan.verify.arxiv_search_metadata", return_value=None), \
+         patch("refscan.verify.semantic_scholar_search_metadata", return_value=[s2_hit]):
+        best, others, err = verify_entry(e, sleep=False)
+    assert err is None
+    assert best is not None
+    assert best.source == "s2"
 
 
 def test_render_verification_md_minimal() -> None:
