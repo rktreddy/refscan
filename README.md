@@ -1,5 +1,7 @@
 # refscan
 
+[![CI](https://github.com/rktreddy/refscan/actions/workflows/ci.yml/badge.svg)](https://github.com/rktreddy/refscan/actions/workflows/ci.yml)
+
 Reference-PDF collection and plagiarism scanning for research papers.
 
 Use cases:
