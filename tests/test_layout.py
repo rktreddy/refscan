@@ -100,6 +100,69 @@ def test_categorization_only_config_does_not_break_layout(tmp_path: Path) -> Non
     assert lay.section_files == ()
 
 
+# --- auto-discovery (no config, non-default layout) ----------------------
+
+def test_autodetect_flat_root_layout(tmp_path: Path) -> None:
+    # references.bib + paper.tex at the root, NO refscan.json.
+    _write(tmp_path / "references.bib")
+    _write(tmp_path / "paper.tex")
+    lay = resolve_layout(tmp_path)
+    assert lay.bib == (tmp_path / "references.bib").resolve()
+    assert lay.section_files == ((tmp_path / "paper.tex").resolve(),)
+    assert lay.auto_bib and lay.auto_sections
+
+
+def test_autodetect_paper_dir_with_main_tex(tmp_path: Path) -> None:
+    # paper/references.bib (default) + paper/main.tex, empty paper/sections.
+    _write(tmp_path / "paper" / "references.bib")
+    (tmp_path / "paper" / "sections").mkdir(parents=True)
+    _write(tmp_path / "paper" / "main.tex")
+    lay = resolve_layout(tmp_path)
+    assert lay.bib == (tmp_path / "paper" / "references.bib").resolve()
+    assert lay.auto_bib is False  # bib was at the default location
+    assert lay.section_files == ((tmp_path / "paper" / "main.tex").resolve(),)
+    assert lay.auto_sections is True
+
+
+def test_autodetect_single_bib_non_standard_name(tmp_path: Path) -> None:
+    _write(tmp_path / "mybib.bib")
+    _write(tmp_path / "paper.tex")
+    lay = resolve_layout(tmp_path)
+    assert lay.bib == (tmp_path / "mybib.bib").resolve()
+    assert lay.auto_bib is True
+
+
+def test_autodetect_ambiguous_bib_not_guessed(tmp_path: Path) -> None:
+    _write(tmp_path / "a.bib")
+    _write(tmp_path / "b.bib")  # two, neither named references.bib
+    lay = resolve_layout(tmp_path)
+    assert lay.auto_bib is False
+    assert lay.bib == (tmp_path / "paper" / "references.bib").resolve()  # default, missing
+
+
+def test_autodetect_prefers_references_bib(tmp_path: Path) -> None:
+    _write(tmp_path / "other.bib")
+    _write(tmp_path / "references.bib")
+    lay = resolve_layout(tmp_path)
+    assert lay.bib == (tmp_path / "references.bib").resolve()
+
+
+def test_explicit_config_not_overridden_by_discovery(tmp_path: Path) -> None:
+    # User explicitly set a (wrong) sections path -> respect it, do NOT auto-detect.
+    _write(tmp_path / "paper.tex")  # a discoverable .tex exists
+    _write(tmp_path / "refscan.json", json.dumps({"sections": "does-not-exist.tex"}))
+    lay = resolve_layout(tmp_path)
+    assert lay.section_files == ()
+    assert lay.auto_sections is False
+
+
+def test_default_layout_does_not_trigger_discovery(tmp_path: Path) -> None:
+    _write(tmp_path / "paper" / "references.bib")
+    _write(tmp_path / "paper" / "sections" / "intro.tex")
+    lay = resolve_layout(tmp_path)
+    assert lay.auto_bib is False and lay.auto_sections is False
+
+
 # --- output artifact paths -----------------------------------------------
 
 def test_output_paths_under_literature(tmp_path: Path) -> None:

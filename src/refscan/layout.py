@@ -42,6 +42,8 @@ class PaperLayout:
     literature_dir: Path
     refs_dir: Path
     cache_dir: Path
+    auto_bib: bool = False            # bib was auto-discovered (no flag/config/default)
+    auto_sections: bool = False       # section files were auto-discovered
 
     @property
     def cite_files(self) -> list[Path]:
@@ -99,6 +101,43 @@ def _read_layout_config(paper_dir: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _discover_bib(paper_dir: Path) -> Path | None:
+    """Best-effort find a references .bib when the default location is absent.
+
+    Searches ``paper/`` then the paper root; prefers a file literally named
+    ``references.bib``, else the sole ``.bib`` in a directory. Returns ``None``
+    if a directory has multiple ambiguous ``.bib`` files (caller should keep the
+    default so the user gets a clear "not found" and can configure explicitly).
+    """
+    for base in (paper_dir / "paper", paper_dir):
+        if not base.is_dir():
+            continue
+        bibs = sorted(b for b in base.glob("*.bib") if b.is_file())
+        named = [b for b in bibs if b.name == "references.bib"]
+        if named:
+            return named[0]
+        if len(bibs) == 1:
+            return bibs[0]
+        if len(bibs) >= 2:
+            return None  # ambiguous — don't guess
+    return None
+
+
+def _discover_sections(paper_dir: Path) -> tuple[Path, ...]:
+    """Best-effort find paper .tex files when ``paper/sections`` has none.
+
+    Search order: ``paper/sections/*.tex`` → ``paper/*.tex`` → ``*.tex`` at the
+    paper root. Returns the .tex files from the first non-empty location.
+    """
+    for base in (paper_dir / "paper" / "sections", paper_dir / "paper", paper_dir):
+        if not base.is_dir():
+            continue
+        texs = tuple(sorted(t for t in base.glob("*.tex") if t.is_file()))
+        if texs:
+            return texs
+    return ()
+
+
 def resolve_layout(paper_dir: Path, *, bib: str | None = None,
                    sections: str | None = None,
                    main_tex: str | None = None) -> PaperLayout:
@@ -106,23 +145,46 @@ def resolve_layout(paper_dir: Path, *, bib: str | None = None,
 
     Precedence for each setting: explicit argument > ``refscan.json`` > default.
     The ``bib``/``sections``/``main_tex`` arguments are typically CLI overrides.
+
+    When ``bib``/``sections`` are neither given nor configured **and** the default
+    ``paper/...`` location is empty, refscan auto-discovers them (see
+    :func:`_discover_bib` / :func:`_discover_sections`) so common layouts work
+    with no config. Explicitly set values are never overridden by discovery.
     """
     paper_dir = paper_dir.resolve()
     cfg = _read_layout_config(paper_dir)
 
-    bib_val = bib or cfg.get("bib") or DEFAULT_BIB
-    sections_val = sections or cfg.get("sections") or DEFAULT_SECTIONS
+    bib_set = bib or cfg.get("bib")
+    sections_set = sections or cfg.get("sections")
     main_val = main_tex or cfg.get("main_tex") or DEFAULT_MAIN_TEX
     lit_val = cfg.get("literature") or DEFAULT_LITERATURE
+
+    # bib: use explicit/default; auto-discover only if defaulted and missing.
+    bib_path = paper_dir / (bib_set or DEFAULT_BIB)
+    auto_bib = False
+    if not bib_set and not bib_path.exists():
+        found = _discover_bib(paper_dir)
+        if found is not None:
+            bib_path, auto_bib = found, True
+
+    # sections: use explicit/default; auto-discover only if defaulted and empty.
+    section_files = _resolve_sections(paper_dir, sections_set or DEFAULT_SECTIONS)
+    auto_sections = False
+    if not sections_set and not section_files:
+        found_secs = _discover_sections(paper_dir)
+        if found_secs:
+            section_files, auto_sections = found_secs, True
 
     literature_dir = paper_dir / lit_val
     main_path = paper_dir / main_val
     return PaperLayout(
         paper_dir=paper_dir,
-        bib=paper_dir / bib_val,
-        section_files=_resolve_sections(paper_dir, sections_val),
+        bib=bib_path,
+        section_files=section_files,
         main_tex=main_path if main_path.exists() else None,
         literature_dir=literature_dir,
         refs_dir=literature_dir / "refs",
         cache_dir=literature_dir / "pdf_text_cache",
+        auto_bib=auto_bib,
+        auto_sections=auto_sections,
     )
