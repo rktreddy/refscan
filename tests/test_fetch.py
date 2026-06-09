@@ -5,12 +5,16 @@ are skipped here. Those are exercised by integration tests in CI if needed.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
 from refscan.bib import BibEntry
 from refscan.fetch import (
+    download_pdf,
     fetch_paper,
+    openalex_pdf_url,
+    openalex_search_metadata,
     resolve_pdf_url,
 )
 
@@ -52,15 +56,76 @@ def test_resolve_pdf_url_falls_back_to_s2() -> None:
     assert source == "semantic-scholar"
 
 
+def test_resolve_pdf_url_falls_back_to_openalex() -> None:
+    e = BibEntry("k", "article", {"title": "Some Paper", "author": "X", "year": "2020"})
+    with patch("refscan.fetch.arxiv_search", return_value=None), \
+         patch("refscan.fetch.semantic_scholar_pdf_url", return_value=None), \
+         patch("refscan.fetch.openalex_pdf_url", return_value="https://ex.com/p.pdf"):
+        url, source = resolve_pdf_url(e, sleep=False)
+    assert url == "https://ex.com/p.pdf"
+    assert source == "openalex"
+
+
 def test_resolve_pdf_url_returns_none_when_no_match() -> None:
     e = BibEntry("k", "article", {
         "title": "Some Paper", "author": "X", "year": "2020",
     })
     with patch("refscan.fetch.arxiv_search", return_value=None), \
-         patch("refscan.fetch.semantic_scholar_pdf_url", return_value=None):
+         patch("refscan.fetch.semantic_scholar_pdf_url", return_value=None), \
+         patch("refscan.fetch.openalex_pdf_url", return_value=None):
         url, source = resolve_pdf_url(e, sleep=False)
     assert url is None
     assert source is None
+
+
+# --- OpenAlex source + download hardening --------------------------------
+
+_OA_META = json.dumps({"results": [{
+    "title": "Neural Ordinary Differential Equations",
+    "publication_year": 2018,
+    "authorships": [{"author": {"display_name": "Ricky T. Q. Chen"}}],
+    "doi": "https://doi.org/10.5555/abc",
+}]}).encode()
+
+
+def test_openalex_search_metadata_parses() -> None:
+    with patch("refscan.fetch._http_get", return_value=(_OA_META, 200)):
+        out = openalex_search_metadata("Neural Ordinary Differential Equations")
+    assert out[0]["title"] == "Neural Ordinary Differential Equations"
+    assert out[0]["year"] == "2018"
+    assert out[0]["doi"] == "10.5555/abc"          # https://doi.org/ stripped
+    assert "Ricky T. Q. Chen" in out[0]["authors"]
+
+
+def test_openalex_search_metadata_request_failure_returns_none() -> None:
+    with patch("refscan.fetch._http_get", return_value=(None, None)):
+        assert openalex_search_metadata("X") is None
+
+
+def test_openalex_pdf_url_returns_oa_pdf() -> None:
+    payload = json.dumps({"results": [{
+        "title": "Neural Ordinary Differential Equations",
+        "best_oa_location": {"pdf_url": "https://example.com/neural.pdf"},
+    }]}).encode()
+    with patch("refscan.fetch._http_get", return_value=(payload, 200)):
+        url = openalex_pdf_url("Neural Ordinary Differential Equations")
+    assert url == "https://example.com/neural.pdf"
+
+
+def test_download_pdf_rejects_non_pdf(tmp_path: Path) -> None:
+    html = b"<!DOCTYPE html><html>" + b"x" * 6000
+    with patch("refscan.fetch._http_get", return_value=(html, 200)):
+        ok = download_pdf("http://x", tmp_path / "a.pdf")
+    assert ok is False
+    assert not (tmp_path / "a.pdf").exists()
+
+
+def test_download_pdf_accepts_pdf(tmp_path: Path) -> None:
+    pdf = b"%PDF-1.5\n" + b"x" * 6000
+    with patch("refscan.fetch._http_get", return_value=(pdf, 200)):
+        ok = download_pdf("http://x", tmp_path / "a.pdf")
+    assert ok is True
+    assert (tmp_path / "a.pdf").read_bytes()[:5] == b"%PDF-"
 
 
 def test_resolve_pdf_url_skips_s2_when_disabled() -> None:
