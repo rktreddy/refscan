@@ -54,7 +54,7 @@ paper_X/
 Scaffold `literature/refs/`, `literature/pdf_text_cache/`, write an initial `reference_tracking.md`, and (if absent) a `refscan.json` config template.
 
 ### `refscan fetch <paper_dir> [--no-s2] [--workers N]`
-Parse `paper/references.bib`. For each entry, try arXiv (by explicit ID if present, otherwise by title+author search), then Semantic Scholar (unless `--no-s2`). Download PDFs into `literature/refs/{BIBKEY}.pdf`. URL resolution is sequential and rate-limited per arXiv/S2 guidelines; downloads run in parallel via a thread pool (default 5 workers, set `--workers 1` for fully sequential).
+Parse `paper/references.bib`. For each entry, try arXiv (by explicit ID if present, otherwise by title+author search), then Semantic Scholar (unless `--no-s2`). Download PDFs into `literature/refs/{BIBKEY}.pdf`. URL resolution is sequential and rate-limited per arXiv/S2 guidelines; downloads run in parallel via a thread pool (default 5 workers, set `--workers 1` for fully sequential). Bib keys that contain path separators or `..` traversal components are reported as `unsafe-key` and skipped, so a reference file can never write outside `literature/refs/`.
 
 ### `refscan track <paper_dir>`
 Regenerate `literature/reference_tracking.md` based on what's currently in `literature/refs/`. Each entry is bucketed as downloaded / fetchable / pre-arXiv / skip-book / skip-software / verify-exists.
@@ -75,9 +75,6 @@ Categorization uses general BibTeX signals out of the box — `@book`/`@inbook` 
 ### `refscan scan <paper_dir> [--shingle-n N] [--min-run M] [--no-filter] [--out PATH]`
 Extract text from every reference PDF, then shingle-match (sliding N-word windows) against each LaTeX section in `paper/sections/`. Write a findings report ranked by **confidence score** — a 0–1 metric combining run length, non-stopword density, and phrase rarity across the cited reference corpus. The report opens with a **Top N concerning matches** table for quick triage, followed by all findings grouped by reference. Default shingle size is 6 words.
 
-### `refscan release {patch|minor|major|X.Y.Z} [--push] [--no-test] [--dry-run]`
-Maintainer-only meta-command for shipping new versions of refscan itself. Validates environment, runs tests, bumps version in `pyproject.toml` and `__init__.py` in lockstep, commits, tags `v{new_version}`, and (with `--push`) pushes to `origin`. Requires editable install + clean working tree on `main` + a CHANGELOG section pre-written for the new version. Use `--dry-run` to preview.
-
 ### `refscan watch <paper_dir> [--interval N] [--top N]`
 Active-drafting helper. Polls `paper/sections/*.tex` at the configured interval and re-runs the plagiarism scan whenever any file is saved, printing a compact terminal summary (top-N matches by confidence). Press `Ctrl-C` to stop. Defaults: poll every 1s, show top 5.
 
@@ -88,7 +85,7 @@ Detect shared n-word passages across two or more papers. Useful as a self-plagia
 Bib hygiene report. Surfaces undefined cites, unused entries, duplicate keys, duplicate titles, missing required fields, suspicious years, and stub authors. Exits with code 1 on any errors, 0 otherwise — useful in CI. Output: `literature/sanity_report.md`.
 
 ### `refscan verify <paper_dir> [--no-s2] [--refresh] [--out PATH]`
-Check each bib entry against arXiv + Semantic Scholar. Flags entries where no convincing match is found (likely fabricated) or where bib metadata diverges from the canonical record. Output: `literature/verification_report.md`. Cached at `literature/verify_cache.json`.
+Check each bib entry against arXiv + Semantic Scholar. Each entry gets a verdict: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (the lookup itself failed — *not* treated as fabricated). Output: `literature/verification_report.md`. Results are cached at `literature/verify_cache.json` and keyed by bib key plus title/author/year, so correcting an entry and re-running picks up the change without `--refresh`; `api-error` results are never cached.
 
 **Semantic Scholar rate limits:** the unauthenticated endpoint throttles aggressively (often after just a few requests). For accurate verification, get a free API key at https://www.semanticscholar.org/product/api and:
 
@@ -97,6 +94,9 @@ export REFSCAN_S2_API_KEY=<your-key>
 ```
 
 Without a key, S2 will likely 429 mid-run; the report flags this and warns that any "not-found" verdicts checked only against arXiv may be false positives for non-arXiv papers (Nature, IEEE, ACM, books).
+
+### `refscan release {patch|minor|major|X.Y.Z} [--push] [--no-test] [--dry-run]` (maintainer-only)
+For shipping new versions of refscan itself. Validates environment, runs tests, bumps version in `pyproject.toml` and `__init__.py` in lockstep, commits, tags `v{new_version}`, and (with `--push`) pushes to `origin`. Requires editable install + clean working tree on `main` + a CHANGELOG section pre-written for the new version. Use `--dry-run` to preview.
 
 ## Typical workflow for a new paper
 
@@ -136,7 +136,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-19 tests covering bib parsing, text processing, shingle logic, and generic-phrase detection.
+111 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch, verify (verdicts + caching), sanity checks, tracking/config, and the release flow. Lint with `ruff check`.
 
 ## Versioning & changelog
 
