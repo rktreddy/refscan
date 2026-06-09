@@ -5,6 +5,22 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] — 2026-06-09
+
+### Added
+- **`refscan check`** — one-shot integrity check. Resolves and prints the
+  layout, runs `sanity-stats` + `scan` (and `verify` with `--verify`), writes
+  the individual reports, and ends with a single **PASS / WARN / FAIL** verdict.
+  Exits non-zero on FAIL (a bib error or a fabricated reference) for CI /
+  pre-commit use.
+- **Auto-detected layout.** When `bib`/`sections` aren't configured or flagged
+  and the default `paper/...` location is empty, refscan discovers them — a
+  `.bib` under `paper/` or the root (preferring `references.bib`; ambiguous
+  multiples are not guessed), and `.tex` files via
+  `paper/sections/*.tex → paper/*.tex → *.tex`. Common layouts (including flat
+  single-`.tex` papers) now work with **no config**. Explicitly set values are
+  never overridden; commands print a note when something was auto-detected.
+
 ## [0.10.0] — 2026-06-09
 
 ### Added

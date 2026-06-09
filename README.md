@@ -14,8 +14,9 @@ Stdlib-only at runtime (uses `pdftotext` from poppler for PDF text extraction).
 
 ## Capabilities
 
-One CLI, nine subcommands (details in [Commands](#commands)):
+One CLI, ten subcommands (details in [Commands](#commands)):
 
+- **`check`** — ⭐ one-shot: run sanity + scan (+ optional verify) and print a **PASS / WARN / FAIL** verdict
 - **`init`** — scaffold `literature/` + a `refscan.json` template
 - **`fetch`** — download cited PDFs from arXiv + Semantic Scholar (parallel)
 - **`track`** — categorize references (downloaded / fetchable / pre-arXiv / skip / verify-exists)
@@ -28,7 +29,7 @@ One CLI, nine subcommands (details in [Commands](#commands)):
 
 Cross-cutting:
 
-- **Configurable layout** — point at any `bib`/`sections` paths via `refscan.json` or `--bib`/`--sections`; works for flat single-`.tex` papers ([details](#custom-paper-layouts))
+- **Auto-detected layout** — finds your `.bib` and `.tex` for common layouts with no config; override via `refscan.json` or `--bib`/`--sections` ([details](#custom-paper-layouts))
 - **Per-paper heuristics** — book/software/suspect-title markers in `refscan.json`
 - **Robust extraction** — mtime-cached `pdftotext`, letter-spacing repair, generic-phrase filtering
 - **Safe & polite** — bib-key path-traversal protection, arXiv/S2 rate-limit etiquette (optional `REFSCAN_S2_API_KEY`)
@@ -76,7 +77,9 @@ paper_X/
 
 ## Custom paper layouts
 
-If your paper isn't laid out as `paper/references.bib` + `paper/sections/`, point refscan at the real locations — either in `refscan.json` at the paper-dir root, or with per-command flags. Both override the defaults; flags win over the config file.
+refscan **auto-detects** common layouts: if `paper/references.bib` / `paper/sections/` aren't there, it searches the paper root and `paper/` for a `.bib` (preferring `references.bib`) and for `.tex` files — so flat single-file papers usually need no config. Commands print a note when something was auto-detected.
+
+To be explicit (or when auto-detection can't decide — e.g. multiple `.bib` files), point refscan at the real locations in `refscan.json` at the paper-dir root, or with per-command flags. Precedence: **flag > `refscan.json` > auto-detection > default**.
 
 For a **flat, single-file paper** (`references.bib` and one `paper.tex` at the root):
 
@@ -101,6 +104,23 @@ Configurable keys (all optional, all relative to the paper dir):
 `--bib` is accepted by `fetch`/`track`/`scan`/`verify`/`sanity-stats`; `--sections` by `scan`/`sanity-stats`/`watch`. Papers using the default layout need no config and are unaffected.
 
 ## Commands
+
+### `refscan check <paper_dir> [--verify] [--bib P] [--sections P]`
+One-shot integrity check — the recommended entry point. Prints the resolved layout, runs **`sanity-stats`** and **`scan`** (and **`verify`** with `--verify`, which uses the network), writes the individual reports, and ends with a single **PASS / WARN / FAIL** verdict. Exits non-zero on **FAIL** (a bib error or a fabricated reference), so it drops straight into CI or a pre-commit hook.
+
+```
+refscan check: my-paper
+  bib:      .../paper/references.bib
+  sections: 3 .tex file(s)
+  refs:     34 PDF(s) in .../literature/refs
+
+results:
+  sanity:  0 error(s), 2 warning(s)  (35 entries, 22 cited)
+  scan:    1 finding(s), top confidence 0.41  (34 refs indexed)
+  verify:  skipped (pass --verify to check refs against arXiv/S2; uses network)
+
+✅ PASS    reports in .../literature/
+```
 
 ### `refscan init <paper_dir>`
 Scaffold `literature/refs/`, `literature/pdf_text_cache/`, write an initial `reference_tracking.md`, and (if absent) a `refscan.json` config template.
@@ -161,10 +181,11 @@ refscan init     .                # sets up literature/
 refscan fetch    .                # auto-download from arXiv + S2
 # Manually fetch whatever refscan reports as missing, dropping PDFs
 # into literature/refs/{KEY}.pdf
-refscan track    .                # refresh the tracking markdown
-refscan scan     .                # run the plagiarism scan
-# Open literature/plagiarism_findings.md, review matches
+refscan check    .                # sanity + scan in one shot, with a verdict
+# add --verify to also check every reference exists on arXiv/S2
 ```
+
+Or run the individual commands (`track`, `scan`, `verify`, `sanity-stats`) as needed — `check` just bundles the read-only ones with a single PASS/WARN/FAIL.
 
 ## Interpreting findings
 
@@ -216,7 +237,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-130 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch, verify (verdicts + caching), sanity checks, tracking/config, layout resolution, cross-paper overlap, and the release flow. Lint with `ruff check`.
+142 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch, verify (verdicts + caching), sanity checks, tracking/config, layout resolution + auto-detection, the `check` verdict, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 ## Versioning & changelog
 
