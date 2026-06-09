@@ -281,6 +281,44 @@ def cmd_overlap(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fix(args: argparse.Namespace) -> int:
+    """Apply safe bib metadata corrections (DOIs, drifted years) found by verify."""
+    from .bib import parse_bib as _parse_bib
+    from .fix import apply_fixes, compute_fixes
+
+    paper_dir = Path(args.paper_dir).resolve()
+    layout = resolve_layout(paper_dir, bib=args.bib)
+    _note_autodetect(layout)
+    if not layout.bib.exists():
+        print(f"error: no references.bib at {layout.bib}", file=sys.stderr)
+        return 1
+
+    results = verify_paper(paper_dir=paper_dir, use_s2=not args.no_s2,
+                           refresh=args.refresh, bib=args.bib, progress=True)
+    entries = _parse_bib(layout.bib)
+    fixes = compute_fixes(entries, {r.key: r for r in results})
+
+    if not fixes:
+        print("\nno safe metadata fixes found (DOIs present, years agree).")
+        return 0
+
+    print(f"\nproposed fixes ({len(fixes)}):")
+    for f in fixes:
+        print(f"  {f.key}: {f.field}  {f.old or '(none)'} → {f.new}"
+              f"   [{f.source}: {f.reason}]")
+
+    if not args.apply:
+        print("\n(preview only — re-run with --apply to write these; "
+              "a .bak backup is made first)")
+        return 0
+
+    backup = layout.bib.with_suffix(layout.bib.suffix + ".bak")
+    backup.write_text(layout.bib.read_text())
+    n = apply_fixes(layout.bib, fixes)
+    print(f"\napplied {n} fix(es) to {layout.bib}\n  backup: {backup}")
+    return 0
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     """One-shot integrity check: layout + sanity + scan (+ optional verify)."""
     paper_dir = Path(args.paper_dir).resolve()
@@ -427,6 +465,20 @@ def build_parser() -> argparse.ArgumentParser:
                     help="ignore cached results and re-query APIs")
     pv.add_argument("--out", help="output path (default: paper_dir/literature/verification_report.md)")
     pv.set_defaults(func=cmd_verify)
+
+    pfx = sub.add_parser(
+        "fix",
+        help="apply safe bib metadata corrections (add DOIs, fix drifted years) found by verify",
+    )
+    pfx.add_argument("paper_dir")
+    pfx.add_argument("--bib", help=_BIB_HELP)
+    pfx.add_argument("--apply", action="store_true",
+                     help="write fixes to the bib (default: preview only); a .bak backup is made first")
+    pfx.add_argument("--no-s2", action="store_true",
+                     help="skip Semantic Scholar (arXiv + OpenAlex + Crossref only)")
+    pfx.add_argument("--refresh", action="store_true",
+                     help="ignore cached verify results and re-query APIs")
+    pfx.set_defaults(func=cmd_fix)
 
     pn = sub.add_parser("sanity-stats", help="bib hygiene report (cited vs defined, dupes, missing fields)")
     pn.add_argument("paper_dir")
