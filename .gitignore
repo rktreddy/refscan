@@ -51,3 +51,6 @@ uv.lock
 *.tmp
 /tmp/
 scratch/
+
+# Local planning docs (maintainer-only, not shipped)
+/refscan_roadmap.md
