@@ -5,6 +5,27 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] — 2026-06-09
+
+### Added
+- **Broader source coverage** — `verify` and `fetch` reach far beyond arXiv/CS:
+  - **OpenAlex** (~250M works across all fields, no key) joins `verify`'s
+    source set and the `fetch` resolution chain (open-access PDFs).
+  - **Crossref** (canonical DOI registry) joins `verify` for journal/proceedings
+    coverage.
+  - **Unpaywall** turns a bib DOI into an open-access PDF during `fetch`.
+  - Net effect: a real non-arXiv paper (Nature, IEEE, ACM, biomed, humanities)
+    is far less likely to be falsely reported as "not found".
+- `BibEntry.doi` (from a `doi` field or an embedded `doi.org` URL).
+- `$REFSCAN_CONTACT_EMAIL` to identify with the OpenAlex/Crossref polite pools
+  and Unpaywall (falls back to the maintainer address).
+
+### Changed
+- `download_pdf` now requires a `%PDF-` header — open-access landing-page HTML
+  is no longer saved as a `.pdf`.
+- Verification report and `not-found` guidance updated to reflect the four
+  metadata sources. Still stdlib-only (all sources are HTTP + JSON).
+
 ## [0.11.0] — 2026-06-09
 
 ### Added
