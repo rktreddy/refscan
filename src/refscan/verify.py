@@ -19,8 +19,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from .bib import BibEntry, parse_bib
-from . import fetch as _fetch_mod
+from .bib import BibEntry, parse_bib, ref_pdf_path
 from .fetch import (
     ARXIV_DELAY_S,
     DEFAULT_USER_AGENT,
@@ -29,6 +28,7 @@ from .fetch import (
     arxiv_search_metadata,
     reset_rate_limit_state,
     semantic_scholar_search_metadata,
+    was_rate_limited,
 )
 from .textproc import title_word_match
 from .track import categorize, load_config
@@ -171,6 +171,18 @@ def _save_cache(cache_file: Path, cache: dict) -> None:
     cache_file.write_text(json.dumps(cache, indent=2, default=str))
 
 
+def _cache_matches(cached: VerifyResult, entry: BibEntry) -> bool:
+    """True if a cached result still describes ``entry``'s current bib metadata.
+
+    The cache is keyed by bib key, but a key can be re-pointed at corrected
+    metadata between runs. Comparing the stored title/author/year guards against
+    serving a stale verdict for an entry the user has since edited.
+    """
+    return (cached.bib_title == entry.title
+            and cached.bib_first_author == entry.first_author
+            and cached.bib_year == entry.year)
+
+
 def _serialize_result(r: VerifyResult) -> dict:
     d = asdict(r)
     return d
@@ -213,7 +225,8 @@ def verify_paper(paper_dir: Path, use_s2: bool = True, refresh: bool = False,
     entries = parse_bib(bib)
     results: list[VerifyResult] = []
     for i, entry in enumerate(entries, 1):
-        pdf_present = (refs / f"{entry.key}.pdf").exists()
+        _pdf = ref_pdf_path(refs, entry.key)
+        pdf_present = bool(_pdf and _pdf.exists())
         bucket = categorize(entry, pdf_present=False, config=config)  # ignore PDF for skip logic
         if bucket in ("skip-book", "skip-software"):
             results.append(VerifyResult(
@@ -225,15 +238,19 @@ def verify_paper(paper_dir: Path, use_s2: bool = True, refresh: bool = False,
             if progress:
                 print(f"[{i}/{len(entries)}] {entry.key}: skipped ({bucket})")
             continue
-        # Cache hit?
+        # Cache hit? Only reuse if the cached result still describes this entry's
+        # current metadata — otherwise an edit to fix a title/author/year would
+        # be masked by a stale verdict.
         if entry.key in cache:
             try:
-                results.append(_deserialize_result(cache[entry.key]))
+                cached = _deserialize_result(cache[entry.key])
+            except (KeyError, TypeError):
+                cached = None
+            if cached is not None and _cache_matches(cached, entry):
+                results.append(cached)
                 if progress:
                     print(f"[{i}/{len(entries)}] {entry.key}: cached")
                 continue
-            except (KeyError, TypeError):
-                pass  # malformed cache entry, re-query
         if progress:
             print(f"[{i}/{len(entries)}] {entry.key}: querying...", end=" ", flush=True)
         best, others, err = verify_entry(entry, use_s2=use_s2, user_agent=user_agent)
@@ -265,7 +282,7 @@ def verify_paper(paper_dir: Path, use_s2: bool = True, refresh: bool = False,
             cache[entry.key] = _serialize_result(r)
             _save_cache(cache_file, cache)  # incremental save
         if progress:
-            extra = " [s2 rate-limited]" if _fetch_mod._s2_rate_limited else ""
+            extra = " [s2 rate-limited]" if was_rate_limited() else ""
             print(r.verdict + extra)
     return results
 

@@ -5,6 +5,32 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] — 2026-06-09
+
+### Security
+- **Bib keys can no longer escape the refs directory.** Keys are parsed
+  permissively, so a key like `../../evil` would previously expand to
+  `refs_dir/../../evil.pdf` and write outside `literature/refs/`. `fetch` now
+  routes every reference path through `bib.ref_pdf_path()`, which rejects keys
+  containing path separators, NUL, or `.`/`..` traversal components; such
+  entries are skipped with an `unsafe-key` status instead of being downloaded.
+  Read-side presence checks (`track`, `verify`, `fetch`'s before-count) treat
+  an unsafe key as "no PDF present". Adds `bib.is_safe_key()` /
+  `bib.ref_pdf_path()`.
+
+### Fixed
+- **`refscan verify` no longer serves a stale cached verdict after a bib edit.**
+  The cache is keyed by bib key; it now also compares the cached title/author/
+  year against the entry's current metadata and re-queries on any change, so
+  correcting a title and re-running (without `--refresh`) reflects the fix.
+
+### Changed
+- `fetch` API endpoint now uses `https://` (was `http://`).
+- Added `fetch.was_rate_limited()` accessor; `cli`/`verify` use it instead of
+  reaching into the private `fetch._s2_rate_limited` global.
+- `bib.parse_bib` docstring documents the one-level brace-nesting limitation.
+  `confidence_score` no longer imports `math` inside the function body.
+
 ## [0.9.0] — 2026-06-09
 
 ### Changed

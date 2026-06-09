@@ -58,6 +58,11 @@ def parse_bib(path: Path) -> list[BibEntry]:
 
     Handles brace-matched bodies and both brace- and quote-delimited values.
     Ignores ``@comment``, ``@string``, ``@preamble`` entries.
+
+    Note: field values are matched with one level of brace nesting (e.g.
+    ``{A {Title}}``). Values nested two or more deep (``{a {b {c}}}``) are
+    truncated at the inner imbalance — acceptable for this deliberately minimal
+    parser, which targets the BibTeX subset typical of ML/CS papers.
     """
     raw = path.read_text()
     entries: list[BibEntry] = []
@@ -97,6 +102,30 @@ def parse_bib(path: Path) -> list[BibEntry]:
             fields[fname] = fval
         entries.append(BibEntry(key=key, entry_type=entry_type, fields=fields))
     return entries
+
+
+def is_safe_key(key: str) -> bool:
+    """True if ``key`` is safe to use as a flat filename component.
+
+    Bib keys are parsed permissively (anything but commas/whitespace), so a
+    hand-written or auto-generated ``.bib`` could contain a key like
+    ``../../etc/foo`` that would escape the refs directory when expanded into
+    ``{key}.pdf``. Reject keys containing path separators, NUL, or traversal
+    components so reference paths always stay inside ``refs_dir``.
+    """
+    if not key or "\x00" in key or "/" in key or "\\" in key:
+        return False
+    if key in (".", ".."):  # traversal components Path() would treat specially
+        return False
+    return Path(key).name == key
+
+
+def ref_pdf_path(refs_dir: Path, key: str) -> Path | None:
+    """Return ``refs_dir/{key}.pdf`` for a bib key, or ``None`` if the key is
+    not a safe filename component (see :func:`is_safe_key`)."""
+    if not is_safe_key(key):
+        return None
+    return refs_dir / f"{key}.pdf"
 
 
 def cited_keys(sections_dir: Path, main_tex: Path | None = None) -> set[str]:

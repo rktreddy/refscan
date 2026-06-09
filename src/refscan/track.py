@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .bib import BibEntry, parse_bib
+from .bib import BibEntry, parse_bib, ref_pdf_path
 
 # Optional per-paper config file. Lives at the paper-dir root so a paper can
 # supply its own title/key heuristics without baking them into the package.
@@ -190,7 +190,8 @@ def generate_tracking_md(
     entries = parse_bib(bib_path)
     bucketed: dict[str, list[BibEntry]] = {b: [] for b in _BUCKET_ORDER}
     for e in entries:
-        pdf_present = (refs_dir / f"{e.key}.pdf").exists()
+        p = ref_pdf_path(refs_dir, e.key)
+        pdf_present = bool(p and p.exists())
         bucketed[categorize(e, pdf_present, config)].append(e)
 
     out: list[str] = [f"# {paper_label} — Reference PDF Tracking\n"]

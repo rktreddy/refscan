@@ -99,6 +99,20 @@ def test_fetch_paper_records_not_found(tmp_path: Path) -> None:
     assert results[0]["status"] == "not-found"
 
 
+def test_fetch_paper_skips_unsafe_key_without_escaping(tmp_path: Path) -> None:
+    refs = tmp_path / "lit" / "refs"
+    refs.mkdir(parents=True)
+    e = BibEntry("../../evil", "article", {"title": "Sneaky", "year": "2020"})
+    with patch("refscan.fetch.resolve_pdf_url") as r_mock, \
+         patch("refscan.fetch.download_pdf") as d_mock:
+        results = fetch_paper([e], refs, max_workers=1, progress=False)
+        r_mock.assert_not_called()   # never resolves an unsafe key
+        d_mock.assert_not_called()   # never downloads it
+    assert results[0]["status"] == "unsafe-key"
+    # Nothing was written anywhere outside refs/ (the traversal target).
+    assert not (tmp_path / "evil.pdf").exists()
+
+
 def test_fetch_paper_runs_downloads_in_parallel(tmp_path: Path) -> None:
     refs = tmp_path / "refs"
     entries = [BibEntry(f"K{i}", "article", {"title": f"Paper {i}", "year": "2020"})

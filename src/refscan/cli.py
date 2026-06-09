@@ -8,8 +8,8 @@ import time
 from pathlib import Path
 
 from . import __version__
-from .bib import parse_bib
-from .fetch import fetch_paper
+from .bib import parse_bib, ref_pdf_path
+from .fetch import fetch_paper, was_rate_limited
 from .overlap import detect_overlap, render_overlap_md
 from .release import execute as release_execute, plan_release
 from .sanity import render_sanity_md, run_sanity, summarize
@@ -56,7 +56,8 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     refs_dir.mkdir(parents=True, exist_ok=True)
 
     entries = parse_bib(bib)
-    n_before = sum(1 for e in entries if (refs_dir / f"{e.key}.pdf").exists())
+    n_before = sum(1 for e in entries
+                   if (p := ref_pdf_path(refs_dir, e.key)) and p.exists())
     results = fetch_paper(
         entries, refs_dir,
         try_s2=not args.no_s2,
@@ -66,10 +67,14 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     downloaded = sum(1 for r in results if r["status"] == "downloaded")
     failed = sum(1 for r in results if r["status"] == "download-failed")
     not_found = sum(1 for r in results if r["status"] == "not-found")
-    print(f"\nbefore: {n_before} / {len(entries)}  |  "
-          f"newly downloaded: {downloaded}  |  "
-          f"download-failed: {failed}  |  "
-          f"not found: {not_found}")
+    unsafe = sum(1 for r in results if r["status"] == "unsafe-key")
+    msg = (f"\nbefore: {n_before} / {len(entries)}  |  "
+           f"newly downloaded: {downloaded}  |  "
+           f"download-failed: {failed}  |  "
+           f"not found: {not_found}")
+    if unsafe:
+        msg += f"  |  unsafe-key: {unsafe}"
+    print(msg)
     # Refresh tracking file to reflect new state
     generate_tracking_md(paper_dir, _paper_label(paper_dir), scan_date=_today())
     return 0
@@ -122,10 +127,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
         use_s2=use_s2,
         refresh=args.refresh,
     )
-    from refscan import fetch as _fetch_mod
     report = render_verification_md(
         _paper_label(paper_dir), results, scan_date=_today(),
-        s2_rate_limited=_fetch_mod._s2_rate_limited,
+        s2_rate_limited=was_rate_limited(),
         s2_used=use_s2,
     )
     out_path = Path(args.out) if args.out else paper_dir / "literature" / "verification_report.md"

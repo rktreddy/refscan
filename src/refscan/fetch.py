@@ -11,9 +11,9 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from .bib import BibEntry
+from .bib import BibEntry, ref_pdf_path
 
-ARXIV_API = "http://export.arxiv.org/api/query"
+ARXIV_API = "https://export.arxiv.org/api/query"
 S2_API = "https://api.semanticscholar.org/graph/v1/paper/search"
 DEFAULT_USER_AGENT = "refscan/0.2 (mailto:rktreddy@gmail.com)"
 ARXIV_DELAY_S = 3.0  # arXiv API recommends ≥3s between requests
@@ -45,6 +45,11 @@ def reset_rate_limit_state() -> None:
     """Reset the in-process rate-limit flag. Useful for tests."""
     global _s2_rate_limited
     _s2_rate_limited = False
+
+
+def was_rate_limited() -> bool:
+    """True if Semantic Scholar returned a 429 (rate limit) during this run."""
+    return _s2_rate_limited
 
 
 def _s2_headers() -> dict:
@@ -310,7 +315,8 @@ def fetch_paper(bib_entries: list[BibEntry], refs_dir: Path,
     for fully sequential behavior, or 5–10 for noticeably faster bulk fetch.
 
     Returns a list of dicts: {key, status, source, url}.
-      - status: "downloaded" | "already-present" | "not-found" | "download-failed"
+      - status: "downloaded" | "already-present" | "not-found" |
+        "download-failed" | "unsafe-key"
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -320,7 +326,14 @@ def fetch_paper(bib_entries: list[BibEntry], refs_dir: Path,
 
     # Phase 1: resolve URLs (sequential, rate-limited).
     for i, e in enumerate(bib_entries, 1):
-        dest = refs_dir / f"{e.key}.pdf"
+        dest = ref_pdf_path(refs_dir, e.key)
+        if dest is None:
+            results.append({"key": e.key, "status": "unsafe-key",
+                             "source": None, "url": None})
+            if progress:
+                print(f"[{i}/{len(bib_entries)}] {e.key}: unsafe key — skipped",
+                      flush=True)
+            continue
         if dest.exists():
             results.append({"key": e.key, "status": "already-present",
                              "source": None, "url": None})

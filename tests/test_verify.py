@@ -5,6 +5,8 @@ favor of direct testing of the pure scoring + verdict functions.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import patch
 
 from refscan.bib import BibEntry
@@ -12,12 +14,32 @@ from refscan.verify import (
     APIResult,
     VerifyResult,
     _author_in,
+    _cache_matches,
     _score_candidate,
     _title_overlap,
     _verdict_from,
     render_verification_md,
     verify_entry,
+    verify_paper,
 )
+
+
+def _make_paper(tmp_path: Path, bib: str) -> Path:
+    paper_dir = tmp_path / "p"
+    (paper_dir / "paper").mkdir(parents=True)
+    (paper_dir / "literature").mkdir(parents=True)
+    (paper_dir / "paper" / "references.bib").write_text(bib)
+    return paper_dir
+
+
+def _seed_cache(paper_dir: Path, key: str, **fields) -> None:
+    rec = {
+        "key": key, "bib_title": "", "bib_first_author": "", "bib_year": "",
+        "bib_pdf_present": False, "verdict": "verified",
+        "best_match": None, "other_matches": [],
+    }
+    rec.update(fields)
+    (paper_dir / "literature" / "verify_cache.json").write_text(json.dumps({key: rec}))
 
 
 def test_title_overlap_full_match() -> None:
@@ -146,6 +168,40 @@ def test_verify_entry_partial_failure_still_yields_candidate() -> None:
     assert err is None
     assert best is not None
     assert best.source == "s2"
+
+
+def test_cache_matches() -> None:
+    e = BibEntry("k", "article", {"title": "T", "author": "Smith, J.", "year": "2020"})
+    same = VerifyResult(key="k", bib_title="T", bib_first_author="Smith",
+                        bib_year="2020", bib_pdf_present=False, verdict="verified")
+    drifted = VerifyResult(key="k", bib_title="Different", bib_first_author="Smith",
+                           bib_year="2020", bib_pdf_present=False, verdict="verified")
+    assert _cache_matches(same, e)
+    assert not _cache_matches(drifted, e)
+
+
+def test_verify_paper_cache_hit_when_metadata_matches(tmp_path: Path) -> None:
+    paper_dir = _make_paper(
+        tmp_path, "@article{k1, title={Correct Title}, author={Smith, J.}, year={2020}}\n")
+    _seed_cache(paper_dir, "k1", bib_title="Correct Title",
+                bib_first_author="Smith", bib_year="2020", verdict="verified")
+    with patch("refscan.verify.verify_entry") as ve:
+        results = verify_paper(paper_dir, use_s2=False, progress=False)
+    ve.assert_not_called()                  # served from cache
+    assert results[0].verdict == "verified"
+
+
+def test_verify_paper_cache_invalidated_on_title_change(tmp_path: Path) -> None:
+    # Bib title was corrected since the cache was written -> must re-query.
+    paper_dir = _make_paper(
+        tmp_path, "@article{k1, title={New Correct Title}, author={Smith, J.}, year={2020}}\n")
+    _seed_cache(paper_dir, "k1", bib_title="Old Wrong Title",
+                bib_first_author="Smith", bib_year="2020", verdict="verified")
+    with patch("refscan.verify.verify_entry", return_value=(None, [], None)) as ve:
+        results = verify_paper(paper_dir, use_s2=False, progress=False)
+    ve.assert_called_once()                 # stale cache -> re-queried
+    assert results[0].bib_title == "New Correct Title"
+    assert results[0].verdict == "not-found"
 
 
 def test_render_verification_md_minimal() -> None:

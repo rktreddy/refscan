@@ -1,6 +1,7 @@
 """Paper-vs-references plagiarism scan via shingle matching."""
 from __future__ import annotations
 
+import math
 import re
 import subprocess
 from collections import defaultdict
@@ -144,7 +145,6 @@ def confidence_score(shingle_text: str, run_len: int, num_refs_with_phrase: int)
     stop_n = sum(1 for w in words if w in _STOPWORDS)
     non_stop_frac = 1.0 - (stop_n / n)
     # Length factor: 1 - exp(-run_len / 10) gives ~0.55 at 8w, ~0.70 at 12w, ~0.86 at 20w
-    import math
     length_factor = 1.0 - math.exp(-run_len / 10.0)
     rarity = 1.0 / math.sqrt(max(1, num_refs_with_phrase))
     return length_factor * non_stop_frac * rarity
