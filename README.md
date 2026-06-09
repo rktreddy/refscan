@@ -130,6 +130,29 @@ Each finding shows a run of consecutive words shared between your paper and one 
 - **No support for BibLaTeX advanced features** (`\addbibresource`, cross-references, string substitutions). Plain BibTeX only.
 - **Books and pre-arxiv papers often unavailable.** The auto-fetcher cannot download paywalled content or material not on arXiv/S2. You'll need to grab those manually.
 
+## Troubleshooting
+
+**`pdftotext: command not found`, or every reference shows as "failed" in the scan report.**
+The poppler runtime dependency is missing. Install it: `brew install poppler` (macOS) or `apt install poppler-utils` (Debian/Ubuntu).
+
+**`refscan verify` marks a real paper as "not found".**
+It was likely checked against arXiv only — either Semantic Scholar was disabled (`--no-s2`) or it rate-limited mid-run. Papers not on arXiv (Nature, IEEE, ACM, books) legitimately show as not-found. Set `REFSCAN_S2_API_KEY` (below) and re-run with `--refresh`, and verify the entry on Google Scholar before treating it as fabricated.
+
+**`refscan verify` reports `api-error`.**
+The arXiv/Semantic Scholar request itself failed (network blip, timeout). This is *not* a fabrication signal — `api-error` results are never cached, so just re-run.
+
+**Semantic Scholar returns `429` (rate limit) after a few requests.**
+The unauthenticated endpoint throttles aggressively. Get a free key at https://www.semanticscholar.org/product/api and `export REFSCAN_S2_API_KEY=<your-key>`, then re-run (`--refresh` for `verify`).
+
+**`refscan fetch` downloaded nothing for an entry, or reports `not-found`.**
+The reference isn't openly available on arXiv/Semantic Scholar (paywalled or not indexed). Grab the PDF manually and drop it in `literature/refs/{BIBKEY}.pdf` — the filename must match the bib key exactly.
+
+**`refscan fetch` reports `unsafe-key` for an entry.**
+That bib key contains path separators or `..` and was skipped to prevent writing outside `literature/refs/`. Rename the key in `references.bib` to plain characters.
+
+**The scan flags lots of matches that look like normal terminology.**
+That's expected — shared technical terms aren't plagiarism. Findings are ranked by confidence score; review the top of the report first. Use `--no-filter` to see raw matches, or raise `--min-run` to require longer shared runs.
+
 ## Tests
 
 ```bash
