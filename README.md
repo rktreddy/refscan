@@ -12,6 +12,28 @@ Use cases:
 
 Stdlib-only at runtime (uses `pdftotext` from poppler for PDF text extraction).
 
+## Capabilities
+
+One CLI, nine subcommands (details in [Commands](#commands)):
+
+- **`init`** — scaffold `literature/` + a `refscan.json` template
+- **`fetch`** — download cited PDFs from arXiv + Semantic Scholar (parallel)
+- **`track`** — categorize references (downloaded / fetchable / pre-arXiv / skip / verify-exists)
+- **`scan`** — shingle-match prose against references, ranked by a confidence score
+- **`verify`** — flag likely-fabricated or metadata-drifted bib entries against arXiv/S2
+- **`sanity-stats`** — bib hygiene report (undefined cites, dupes, missing fields, …), CI-friendly exit code
+- **`watch`** — re-scan on `.tex` save while drafting
+- **`overlap`** — cross-paper self-plagiarism check
+- **`release`** — maintainer-only version bump / test / tag / push
+
+Cross-cutting:
+
+- **Configurable layout** — point at any `bib`/`sections` paths via `refscan.json` or `--bib`/`--sections`; works for flat single-`.tex` papers ([details](#custom-paper-layouts))
+- **Per-paper heuristics** — book/software/suspect-title markers in `refscan.json`
+- **Robust extraction** — mtime-cached `pdftotext`, letter-spacing repair, generic-phrase filtering
+- **Safe & polite** — bib-key path-traversal protection, arXiv/S2 rate-limit etiquette (optional `REFSCAN_S2_API_KEY`)
+- **Stdlib-only runtime**, Python 3.10+, 130 tests, CI on 3.10–3.13
+
 ## Install
 
 **Recommended (uv tool — works from any directory regardless of active venv):**
