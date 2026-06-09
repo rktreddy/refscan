@@ -23,6 +23,13 @@ def _write(paper: Path, bib: str, sections: dict[str, str] | None = None) -> Non
             (paper / "paper" / "sections" / name).write_text(content)
 
 
+def _check(paper: Path) -> list:
+    """Run check_bib via the resolved default layout for ``paper``."""
+    from refscan.layout import resolve_layout
+    lay = resolve_layout(paper)
+    return check_bib(lay.bib, lay.cite_files)
+
+
 def test_no_issues_clean_bib(paper: Path) -> None:
     _write(paper,
            bib="""@article{Foo2020,
@@ -31,8 +38,7 @@ def test_no_issues_clean_bib(paper: Path) -> None:
                   year={2020}
                   }""",
            sections={"intro.tex": r"See \cite{Foo2020}."})
-    issues = check_bib(paper / "paper" / "references.bib",
-                        paper / "paper" / "sections")
+    issues = _check(paper)
     assert issues == []
 
 
@@ -42,8 +48,7 @@ def test_undefined_cite_flagged(paper: Path) -> None:
                   title={A Title}, author={Smith, Jane}, year={2020}
                   }""",
            sections={"intro.tex": r"See \cite{Foo2020} and \cite{Missing2021}."})
-    issues = check_bib(paper / "paper" / "references.bib",
-                        paper / "paper" / "sections")
+    issues = _check(paper)
     cats = {i.category for i in issues}
     assert "undefined-cite" in cats
     assert any(i.key == "Missing2021" and i.severity == "error" for i in issues)
@@ -54,8 +59,7 @@ def test_unused_entry_flagged(paper: Path) -> None:
            bib="""@article{Foo2020, title={t}, author={a}, year={2020}}
                   @article{Bar2021, title={t}, author={a}, year={2021}}""",
            sections={"intro.tex": r"See \cite{Foo2020}."})
-    issues = check_bib(paper / "paper" / "references.bib",
-                        paper / "paper" / "sections")
+    issues = _check(paper)
     unused = [i for i in issues if i.category == "unused-entry"]
     assert len(unused) == 1
     assert unused[0].key == "Bar2021"
@@ -67,8 +71,7 @@ def test_duplicate_key_flagged(paper: Path) -> None:
            bib="""@article{Foo2020, title={t}, author={a}, year={2020}}
                   @article{Foo2020, title={u}, author={b}, year={2020}}""",
            sections={"intro.tex": r"\cite{Foo2020}"})
-    issues = check_bib(paper / "paper" / "references.bib",
-                        paper / "paper" / "sections")
+    issues = _check(paper)
     dup = [i for i in issues if i.category == "duplicate-key"]
     assert len(dup) == 1
     assert dup[0].severity == "error"
@@ -79,8 +82,7 @@ def test_duplicate_title_flagged(paper: Path) -> None:
            bib="""@article{Foo2020, title={Same Title Words Here}, author={a}, year={2020}}
                   @article{Bar2021, title={SAME title words here}, author={b}, year={2021}}""",
            sections={"intro.tex": r"\cite{Foo2020}\cite{Bar2021}"})
-    issues = check_bib(paper / "paper" / "references.bib",
-                        paper / "paper" / "sections")
+    issues = _check(paper)
     dup_titles = [i for i in issues if i.category == "duplicate-title"]
     assert len(dup_titles) == 1
 
@@ -91,8 +93,7 @@ def test_missing_required_fields(paper: Path) -> None:
                   @article{NoAuthor, title={t}, year={2020}}
                   @article{NoYear, title={t}, author={a}}""",
            sections={"intro.tex": r"\cite{NoTitle}\cite{NoAuthor}\cite{NoYear}"})
-    issues = check_bib(paper / "paper" / "references.bib",
-                        paper / "paper" / "sections")
+    issues = _check(paper)
     cats = {i.category for i in issues}
     assert "missing-title" in cats
     assert "missing-author" in cats
@@ -103,8 +104,7 @@ def test_year_in_future_warning(paper: Path) -> None:
     _write(paper,
            bib="""@article{Far2099, title={t}, author={a}, year={2099}}""",
            sections={"intro.tex": r"\cite{Far2099}"})
-    issues = check_bib(paper / "paper" / "references.bib",
-                        paper / "paper" / "sections")
+    issues = _check(paper)
     assert any(i.category == "year-future" for i in issues)
 
 
@@ -112,8 +112,7 @@ def test_year_too_old_warning(paper: Path) -> None:
     _write(paper,
            bib="""@article{Old, title={t}, author={a}, year={1850}}""",
            sections={"intro.tex": r"\cite{Old}"})
-    issues = check_bib(paper / "paper" / "references.bib",
-                        paper / "paper" / "sections")
+    issues = _check(paper)
     assert any(i.category == "year-too-old" for i in issues)
 
 
@@ -121,8 +120,7 @@ def test_stub_author_flagged(paper: Path) -> None:
     _write(paper,
            bib="""@article{Stub, title={t}, author={others}, year={2020}}""",
            sections={"intro.tex": r"\cite{Stub}"})
-    issues = check_bib(paper / "paper" / "references.bib",
-                        paper / "paper" / "sections")
+    issues = _check(paper)
     assert any(i.category == "stub-author" for i in issues)
 
 
@@ -130,8 +128,7 @@ def test_summarize_counts(paper: Path) -> None:
     _write(paper,
            bib="""@article{NoTitle, author={a}, year={2020}}""",
            sections={"intro.tex": r"\cite{NoTitle}\cite{Missing}"})
-    issues = check_bib(paper / "paper" / "references.bib",
-                        paper / "paper" / "sections")
+    issues = _check(paper)
     counts = summarize(issues)
     assert counts["error"] >= 2  # missing-title + undefined-cite
 

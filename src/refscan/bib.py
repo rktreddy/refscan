@@ -128,13 +128,12 @@ def ref_pdf_path(refs_dir: Path, key: str) -> Path | None:
     return refs_dir / f"{key}.pdf"
 
 
-def cited_keys(sections_dir: Path, main_tex: Path | None = None) -> set[str]:
-    """Extract all bib keys referenced by ``\\cite*{}`` across section tex files."""
-    files = list(sections_dir.glob("*.tex"))
-    if main_tex and main_tex.exists():
-        files.append(main_tex)
+def cited_keys(tex_files: list[Path]) -> set[str]:
+    """Extract all bib keys referenced by ``\\cite*{}`` across the given tex files."""
     keys: set[str] = set()
-    for f in files:
+    for f in tex_files:
+        if not f.exists():
+            continue
         raw = f.read_text(errors="ignore")
         for m in re.finditer(r"\\cite[pt]?\*?\{([^}]+)\}", raw):
             for k in m.group(1).split(","):

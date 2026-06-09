@@ -5,6 +5,30 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] — 2026-06-09
+
+### Added
+- **Configurable paper layout.** refscan no longer requires the
+  `paper/references.bib` + `paper/sections/` structure. Input locations are
+  resolved (precedence: CLI flag > `refscan.json` > default) via the new
+  `layout.resolve_layout()`:
+  - `refscan.json` keys: `bib`, `sections`, `main_tex`, `literature`.
+    `sections` may be a directory, a single `.tex` file, or a glob.
+  - CLI flags: `--bib` (`fetch`/`track`/`scan`/`verify`/`sanity-stats`) and
+    `--sections` (`scan`/`sanity-stats`/`watch`).
+  - Enables flat single-file papers (`references.bib` + `paper.tex` at the
+    root) with `{"bib": "references.bib", "sections": "paper.tex"}`.
+- `refscan init` writes the layout keys into the `refscan.json` template.
+
+### Changed
+- Defaults are unchanged — papers using `paper/{references.bib,sections}` need
+  no config and behave exactly as before.
+- Internal APIs now take resolved paths: `scan()` and `bib.cited_keys()` accept
+  an explicit list of `.tex` files; `sanity.check_bib()`/`run_sanity()`,
+  `verify.verify_paper()`, and `overlap.detect_overlap()` are layout-aware.
+- `cross-paper overlap` and the `watch` file-set now follow each paper's
+  configured layout.
+
 ## [0.9.1] — 2026-06-09
 
 ### Security

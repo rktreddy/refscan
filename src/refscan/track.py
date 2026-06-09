@@ -38,11 +38,17 @@ DEFAULT_CONFIG = TrackConfig()
 
 _CONFIG_TEMPLATE = {
     "_comment": (
-        "Optional per-paper heuristics for `refscan track`/`verify`. All lists "
-        "are lowercase substring/key matches and may be left empty. `refscan "
-        "verify` is the robust way to detect fabricated references; "
-        "suspect_title_markers is only a coarse offline pre-filter."
+        "Optional per-paper config for refscan. LAYOUT keys (bib, sections, "
+        "main_tex, literature) override the default paper/... layout; leave "
+        "empty to use defaults. sections may be a directory, a single .tex "
+        "file, or a glob. CATEGORIZATION markers are lowercase substring/key "
+        "matches for `track`/`verify`; `refscan verify` is the robust "
+        "fabrication check, suspect_title_markers is only a coarse pre-filter."
     ),
+    "bib": "",
+    "sections": "",
+    "main_tex": "",
+    "literature": "",
     "book_title_markers": [],
     "software_keys": [],
     "software_title_markers": [],

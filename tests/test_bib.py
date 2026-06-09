@@ -87,7 +87,7 @@ def test_cited_keys(tmp_path: Path) -> None:
     (sections / "method.tex").write_text(
         "Following \\citet{Foo2019}, we extend..."
     )
-    keys = cited_keys(sections)
+    keys = cited_keys(sorted(sections.glob("*.tex")))
     assert keys == {"Foo2019", "Bar2018", "Baz2020"}
 
 
