@@ -112,6 +112,23 @@ def test_ref_pdf_path_unsafe_key_returns_none(tmp_path: Path) -> None:
     assert tmp_path.resolve() not in escaped.parents
 
 
+def test_bibentry_doi_from_field() -> None:
+    assert BibEntry("k", "article", {"doi": "10.1/abc"}).doi == "10.1/abc"
+
+
+def test_bibentry_doi_strips_url() -> None:
+    assert BibEntry("k", "article", {"doi": "https://doi.org/10.1/abc"}).doi == "10.1/abc"
+
+
+def test_bibentry_doi_from_embedded_url() -> None:
+    e = BibEntry("k", "article", {"url": "see https://doi.org/10.1234/xyz.5 here"})
+    assert e.doi == "10.1234/xyz.5"
+
+
+def test_bibentry_doi_absent() -> None:
+    assert BibEntry("k", "article", {"title": "t"}).doi == ""
+
+
 def test_bibentry_first_author_styles() -> None:
     e1 = BibEntry("k", "article", {"author": "Smith, Jane"})
     e2 = BibEntry("k", "article", {"author": "Jane Smith"})

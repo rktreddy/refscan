@@ -40,6 +40,18 @@ class BibEntry:
         return self.fields.get("year", "").strip()
 
     @property
+    def doi(self) -> str:
+        """Return the entry's DOI (from a ``doi`` field or any doi.org URL), else ""."""
+        d = self.fields.get("doi", "").strip()
+        if d:
+            return re.sub(r"^https?://(dx\.)?doi\.org/", "", d, flags=re.IGNORECASE).strip()
+        for v in self.fields.values():
+            m = re.search(r"10\.\d{4,9}/[^\s,}]+", v)
+            if m:
+                return m.group(0)
+        return ""
+
+    @property
     def explicit_arxiv_id(self) -> str | None:
         """Return arXiv ID if one appears verbatim in any field, else None."""
         for v in self.fields.values():

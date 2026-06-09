@@ -11,11 +11,13 @@ from unittest.mock import patch
 
 from refscan.bib import BibEntry
 from refscan.fetch import (
+    crossref_search_metadata,
     download_pdf,
     fetch_paper,
     openalex_pdf_url,
     openalex_search_metadata,
     resolve_pdf_url,
+    unpaywall_pdf_url,
 )
 
 
@@ -126,6 +128,50 @@ def test_download_pdf_accepts_pdf(tmp_path: Path) -> None:
         ok = download_pdf("http://x", tmp_path / "a.pdf")
     assert ok is True
     assert (tmp_path / "a.pdf").read_bytes()[:5] == b"%PDF-"
+
+
+# --- Crossref + Unpaywall ------------------------------------------------
+
+def test_crossref_search_metadata_parses() -> None:
+    payload = json.dumps({"message": {"items": [{
+        "title": ["Deep Residual Learning for Image Recognition"],
+        "author": [{"given": "Kaiming", "family": "He"}],
+        "issued": {"date-parts": [[2016]]},
+        "DOI": "10.1109/CVPR.2016.90",
+    }]}}).encode()
+    with patch("refscan.fetch._http_get", return_value=(payload, 200)):
+        out = crossref_search_metadata("Deep Residual Learning")
+    assert out[0]["title"].startswith("Deep Residual")
+    assert out[0]["year"] == "2016"
+    assert out[0]["doi"] == "10.1109/CVPR.2016.90"
+    assert "Kaiming He" in out[0]["authors"]
+
+
+def test_crossref_request_failure_returns_none() -> None:
+    with patch("refscan.fetch._http_get", return_value=(None, None)):
+        assert crossref_search_metadata("X") is None
+
+
+def test_unpaywall_pdf_url_returns_pdf() -> None:
+    payload = json.dumps({"best_oa_location": {"url_for_pdf": "https://ex.com/oa.pdf"}}).encode()
+    with patch("refscan.fetch._http_get", return_value=(payload, 200)):
+        assert unpaywall_pdf_url("10.1/abc") == "https://ex.com/oa.pdf"
+
+
+def test_unpaywall_no_doi_returns_none() -> None:
+    assert unpaywall_pdf_url("") is None
+
+
+def test_resolve_pdf_url_falls_back_to_unpaywall_via_doi() -> None:
+    e = BibEntry("k", "article", {"title": "J", "author": "X", "year": "2020",
+                                   "doi": "10.1/abc"})
+    with patch("refscan.fetch.arxiv_search", return_value=None), \
+         patch("refscan.fetch.semantic_scholar_pdf_url", return_value=None), \
+         patch("refscan.fetch.openalex_pdf_url", return_value=None), \
+         patch("refscan.fetch.unpaywall_pdf_url", return_value="https://ex.com/u.pdf"):
+        url, source = resolve_pdf_url(e, sleep=False)
+    assert url == "https://ex.com/u.pdf"
+    assert source == "unpaywall"
 
 
 def test_resolve_pdf_url_skips_s2_when_disabled() -> None:

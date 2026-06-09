@@ -141,7 +141,8 @@ def test_verify_entry_api_error_when_source_fails_and_no_candidates() -> None:
     e = BibEntry("k", "article", {"title": "Some Real Paper", "author": "X", "year": "2020"})
     with patch("refscan.verify.arxiv_search_metadata", return_value=None), \
          patch("refscan.verify.semantic_scholar_search_metadata", return_value=[]), \
-         patch("refscan.verify.openalex_search_metadata", return_value=[]):
+         patch("refscan.verify.openalex_search_metadata", return_value=[]), \
+         patch("refscan.verify.crossref_search_metadata", return_value=[]):
         best, others, err = verify_entry(e, sleep=False)
     assert best is None
     assert err == "api-error"
@@ -152,7 +153,8 @@ def test_verify_entry_not_found_when_apis_genuinely_empty() -> None:
     e = BibEntry("k", "article", {"title": "Imaginary Paper", "author": "X", "year": "2020"})
     with patch("refscan.verify.arxiv_search_metadata", return_value=[]), \
          patch("refscan.verify.semantic_scholar_search_metadata", return_value=[]), \
-         patch("refscan.verify.openalex_search_metadata", return_value=[]):
+         patch("refscan.verify.openalex_search_metadata", return_value=[]), \
+         patch("refscan.verify.crossref_search_metadata", return_value=[]):
         best, others, err = verify_entry(e, sleep=False)
     assert best is None
     assert err is None  # -> _verdict_from(None) == "not-found"
@@ -166,12 +168,28 @@ def test_verify_entry_uses_openalex_when_arxiv_s2_empty() -> None:
           "year": "2017", "arxiv_id": "", "doi": "10.5555/3295222.3295349"}
     with patch("refscan.verify.arxiv_search_metadata", return_value=[]), \
          patch("refscan.verify.semantic_scholar_search_metadata", return_value=[]), \
-         patch("refscan.verify.openalex_search_metadata", return_value=[oa]):
+         patch("refscan.verify.openalex_search_metadata", return_value=[oa]), \
+         patch("refscan.verify.crossref_search_metadata", return_value=[]):
         best, others, err = verify_entry(e, sleep=False)
     assert err is None
     assert best is not None
     assert best.source == "openalex"
     assert best.doi == "10.5555/3295222.3295349"
+
+
+def test_verify_entry_uses_crossref_for_journal_paper() -> None:
+    e = BibEntry("k", "article", {"title": "Deep Residual Learning",
+                                   "author": "He", "year": "2016"})
+    cr = {"title": "Deep Residual Learning", "authors": ["Kaiming He"],
+          "year": "2016", "arxiv_id": "", "doi": "10.1109/CVPR.2016.90"}
+    with patch("refscan.verify.arxiv_search_metadata", return_value=[]), \
+         patch("refscan.verify.semantic_scholar_search_metadata", return_value=[]), \
+         patch("refscan.verify.openalex_search_metadata", return_value=[]), \
+         patch("refscan.verify.crossref_search_metadata", return_value=[cr]):
+        best, others, err = verify_entry(e, sleep=False)
+    assert err is None
+    assert best is not None
+    assert best.source == "crossref"
 
 
 def test_verify_entry_partial_failure_still_yields_candidate() -> None:
@@ -182,7 +200,8 @@ def test_verify_entry_partial_failure_still_yields_candidate() -> None:
               "authors": ["Chen"], "year": "2018", "arxiv_id": "1806.07366"}
     with patch("refscan.verify.arxiv_search_metadata", return_value=None), \
          patch("refscan.verify.semantic_scholar_search_metadata", return_value=[s2_hit]), \
-         patch("refscan.verify.openalex_search_metadata", return_value=[]):
+         patch("refscan.verify.openalex_search_metadata", return_value=[]), \
+         patch("refscan.verify.crossref_search_metadata", return_value=[]):
         best, others, err = verify_entry(e, sleep=False)
     assert err is None
     assert best is not None
