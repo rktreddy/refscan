@@ -257,7 +257,35 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-181 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML report, cross-paper overlap, and the release flow. Lint with `ruff check`.
+185 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML report, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
+
+Terminal output is colorized when stdout is a TTY; it stays plain when piped or when `NO_COLOR` is set (and you can force it with `FORCE_COLOR=1`).
+
+## Gating your paper repo (pre-commit & CI)
+
+Keep your bibliography honest automatically.
+
+**pre-commit** — add to your paper repo's `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/rktreddy/refscan
+    rev: v0.16.0
+    hooks:
+      - id: refscan-sanity        # fast, offline; blocks a commit on bib errors
+      # - id: refscan-check       # also runs the plagiarism scan (needs pdftotext)
+```
+
+**GitHub Actions** — refscan ships a composite action; in your paper repo's workflow:
+
+```yaml
+- uses: rktreddy/refscan@v0.16.0
+  with:
+    paper-dir: .
+    extra-args: "--verify"        # optional: also check refs against arXiv/S2/OpenAlex/Crossref
+```
+
+Both exit non-zero on a FAIL (bib error, fabricated or retracted reference), so they gate the commit/PR.
 
 ## Versioning & changelog
 
