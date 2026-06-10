@@ -179,11 +179,13 @@ pip install 'refscan[semantic]'        # full:  sentence-transformers — torch 
 ### `refscan verify <paper_dir> [--no-s2] [--refresh] [--out PATH]`
 Check each bib entry against arXiv, Semantic Scholar, OpenAlex, and Crossref — together they index preprints, journals, conference proceedings, and books across all fields, so a real non-arXiv paper (Nature, IEEE, ACM, biomed, humanities) is far less likely to be falsely flagged. It also **flags retracted papers** (via OpenAlex's retraction data) in a dedicated 🚨 section — citing retracted work is as serious as a fabricated citation, and `check --verify` treats it as a FAIL. Each entry gets a verdict: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (the lookup itself failed — *not* treated as fabricated). Output: `literature/verification_report.md`. Results are cached at `literature/verify_cache.json` and keyed by bib key plus title/author/year, so correcting an entry and re-running picks up the change without `--refresh`; `api-error` results are never cached.
 
-**API keys & etiquette:** OpenAlex and Crossref need no key (refscan uses their polite pools). Identify yourself to them — and to Unpaywall — by setting a contact email:
+**API keys & etiquette:** OpenAlex and Crossref need no key. refscan ships **no default contact email** (it never sends anyone else's address), so set your own to use the polite pools — and to enable **Unpaywall**, which requires an email and is otherwise skipped:
 
 ```bash
 export REFSCAN_CONTACT_EMAIL=you@example.com
 ```
+
+Without it, OpenAlex/Crossref still work (anonymous common pool) and Unpaywall is skipped; the other fetch sources are unaffected.
 
 **Semantic Scholar rate limits:** only S2's unauthenticated endpoint throttles aggressively (often after just a few requests). For best S2 coverage, get a free API key at https://www.semanticscholar.org/product/api and:
 
@@ -298,7 +300,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-209 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
+211 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 Terminal output is colorized when stdout is a TTY; it stays plain when piped or when `NO_COLOR` is set (and you can force it with `FORCE_COLOR=1`).
 

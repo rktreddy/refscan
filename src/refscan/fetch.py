@@ -14,12 +14,15 @@ from pathlib import Path
 
 from .bib import BibEntry, ref_pdf_path
 
+from . import __version__
+
 ARXIV_API = "https://export.arxiv.org/api/query"
 S2_API = "https://api.semanticscholar.org/graph/v1/paper/search"
 OPENALEX_API = "https://api.openalex.org/works"
 CROSSREF_API = "https://api.crossref.org/works"
 UNPAYWALL_API = "https://api.unpaywall.org/v2"
-DEFAULT_USER_AGENT = "refscan/0.2 (mailto:rktreddy@gmail.com)"
+# Identifies the tool + project, no personal contact (see _contact_email()).
+DEFAULT_USER_AGENT = f"refscan/{__version__} (+https://github.com/rktreddy/refscan)"
 ARXIV_DELAY_S = 3.0  # arXiv API recommends ≥3s between requests
 S2_DELAY_S = 3.0     # Semantic Scholar unauthenticated rate is strict; 3s is conservative
 OPENALEX_DELAY_S = 1.0   # OpenAlex polite pool is generous; 1s is courteous
@@ -27,16 +30,24 @@ CROSSREF_DELAY_S = 1.0   # Crossref polite pool
 UNPAYWALL_DELAY_S = 1.0  # Unpaywall
 S2_API_KEY_ENV = "REFSCAN_S2_API_KEY"
 CONTACT_EMAIL_ENV = "REFSCAN_CONTACT_EMAIL"
-_DEFAULT_CONTACT_EMAIL = "rktreddy@gmail.com"
 
 
 def _contact_email() -> str:
-    """Contact email for API polite pools (OpenAlex ``mailto``, Unpaywall).
+    """Caller's contact email for API polite pools, or "" if unset.
 
-    Overridable via ``$REFSCAN_CONTACT_EMAIL`` so public users identify with
-    their own address rather than the maintainer's.
+    Read from ``$REFSCAN_CONTACT_EMAIL``. No default ships — refscan never sends
+    anyone else's address. Empty means: OpenAlex/Crossref use the anonymous
+    common pool, and Unpaywall (which requires an email) is skipped.
     """
-    return os.environ.get(CONTACT_EMAIL_ENV, "").strip() or _DEFAULT_CONTACT_EMAIL
+    return os.environ.get(CONTACT_EMAIL_ENV, "").strip()
+
+
+def _polite(params: dict) -> dict:
+    """Add ``mailto`` to ``params`` only when a contact email is configured."""
+    email = _contact_email()
+    if email:
+        params["mailto"] = email
+    return params
 
 # Module-level flag: once we get a 429 from S2, stop hammering it for the rest
 # of this run.
@@ -280,9 +291,7 @@ def openalex_search_metadata(title: str, author: str = "",
     if not title:
         return []
     q = f"{title} {author}".strip()
-    params = urllib.parse.urlencode({
-        "search": q, "per-page": limit, "mailto": _contact_email(),
-    })
+    params = urllib.parse.urlencode(_polite({"search": q, "per-page": limit}))
     data, _ = _http_get(f"{OPENALEX_API}?{params}", user_agent, timeout=30)
     if not data:
         return None
@@ -314,9 +323,7 @@ def openalex_pdf_url(title: str, author: str = "",
     if not title:
         return None
     q = f"{title} {author}".strip()
-    params = urllib.parse.urlencode({
-        "search": q, "per-page": "5", "mailto": _contact_email(),
-    })
+    params = urllib.parse.urlencode(_polite({"search": q, "per-page": "5"}))
     data, _ = _http_get(f"{OPENALEX_API}?{params}", user_agent, timeout=30)
     if not data:
         return None
@@ -356,9 +363,7 @@ def crossref_search_metadata(title: str, author: str = "",
     if not title:
         return []
     q = f"{title} {author}".strip()
-    params = urllib.parse.urlencode({
-        "query.bibliographic": q, "rows": limit, "mailto": _contact_email(),
-    })
+    params = urllib.parse.urlencode(_polite({"query.bibliographic": q, "rows": limit}))
     data, _ = _http_get(f"{CROSSREF_API}?{params}", user_agent, timeout=30)
     if not data:
         return None
@@ -391,12 +396,19 @@ def crossref_search_metadata(title: str, author: str = "",
 
 
 def unpaywall_pdf_url(doi: str, user_agent: str = DEFAULT_USER_AGENT) -> str | None:
-    """Given a DOI, return the best open-access PDF URL via Unpaywall, else None."""
+    """Given a DOI, return the best open-access PDF URL via Unpaywall, else None.
+
+    Unpaywall requires a contact email; if ``$REFSCAN_CONTACT_EMAIL`` is unset
+    this source is skipped (returns None) rather than sending a default address.
+    """
     doi = (doi or "").strip()
     doi = re.sub(r"^https?://(dx\.)?doi\.org/", "", doi, flags=re.IGNORECASE)
     if not doi:
         return None
-    params = urllib.parse.urlencode({"email": _contact_email()})
+    email = _contact_email()
+    if not email:
+        return None
+    params = urllib.parse.urlencode({"email": email})
     data, _ = _http_get(f"{UNPAYWALL_API}/{urllib.parse.quote(doi)}?{params}",
                         user_agent, timeout=30)
     if not data:

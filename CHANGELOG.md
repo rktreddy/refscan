@@ -5,6 +5,19 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.0] — 2026-06-10
+
+### Changed
+- **No maintainer contact email ships in the package.** The default API
+  `User-Agent` now identifies the tool + repo only (`refscan/<version>
+  (+https://github.com/rktreddy/refscan)`), and the OpenAlex/Crossref `mailto`
+  is sent only when the user sets `$REFSCAN_CONTACT_EMAIL` (otherwise the
+  anonymous common pool is used). **Unpaywall** requires an email, so it is now
+  skipped when `$REFSCAN_CONTACT_EMAIL` is unset rather than sending a default
+  address. This keeps a public install from attributing every user's API
+  traffic to the maintainer. Set `$REFSCAN_CONTACT_EMAIL` to restore Unpaywall
+  and the polite pools.
+
 ## [0.20.0] — 2026-06-10
 
 ### Added
