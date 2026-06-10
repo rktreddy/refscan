@@ -167,7 +167,8 @@ def test_crossref_request_failure_returns_none() -> None:
         assert crossref_search_metadata("X") is None
 
 
-def test_unpaywall_pdf_url_returns_pdf() -> None:
+def test_unpaywall_pdf_url_returns_pdf(monkeypatch) -> None:
+    monkeypatch.setenv("REFSCAN_CONTACT_EMAIL", "me@example.com")  # required by Unpaywall
     payload = json.dumps({"best_oa_location": {"url_for_pdf": "https://ex.com/oa.pdf"}}).encode()
     with patch("refscan.fetch._http_get", return_value=(payload, 200)):
         assert unpaywall_pdf_url("10.1/abc") == "https://ex.com/oa.pdf"
@@ -175,6 +176,21 @@ def test_unpaywall_pdf_url_returns_pdf() -> None:
 
 def test_unpaywall_no_doi_returns_none() -> None:
     assert unpaywall_pdf_url("") is None
+
+
+def test_unpaywall_skips_without_contact_email(monkeypatch) -> None:
+    monkeypatch.delenv("REFSCAN_CONTACT_EMAIL", raising=False)
+    # No email set -> skipped before any network call (no default address sent).
+    with patch("refscan.fetch._http_get", side_effect=AssertionError("should not be called")):
+        assert unpaywall_pdf_url("10.1/abc") is None
+
+
+def test_contact_email_no_personal_default(monkeypatch) -> None:
+    from refscan.fetch import _contact_email
+    monkeypatch.delenv("REFSCAN_CONTACT_EMAIL", raising=False)
+    assert _contact_email() == ""        # nothing shipped
+    monkeypatch.setenv("REFSCAN_CONTACT_EMAIL", "you@example.com")
+    assert _contact_email() == "you@example.com"
 
 
 def test_resolve_pdf_url_falls_back_to_unpaywall_via_doi() -> None:
