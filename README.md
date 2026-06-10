@@ -209,20 +209,44 @@ proposed fixes (2):
 ### `refscan release {patch|minor|major|X.Y.Z} [--push] [--no-test] [--dry-run]` (maintainer-only)
 For shipping new versions of refscan itself. Validates environment, runs tests, bumps version in `pyproject.toml` and `__init__.py` in lockstep, commits, tags `v{new_version}`, and (with `--push`) pushes to `origin`. Requires editable install + clean working tree on `main` + a CHANGELOG section pre-written for the new version. Use `--dry-run` to preview.
 
-## Typical workflow for a new paper
+## User guide — a pre-submission pass
 
+A practical end-to-end flow. `<paper>` is your paper directory (often just `.`); refscan auto-detects the bib and `.tex` for common layouts, or set them in [`refscan.json`](#custom-paper-layouts).
+
+**1. Set up & collect references**
 ```bash
-cd my_paper
-
-refscan init     .                # sets up literature/
-refscan fetch    .                # auto-download from arXiv + S2
-# Manually fetch whatever refscan reports as missing, dropping PDFs
-# into literature/refs/{KEY}.pdf
-refscan check    .                # sanity + scan in one shot, with a verdict
-# add --verify to also check every reference exists on arXiv/S2
+refscan init  <paper>            # scaffold literature/ (refs, cache, refscan.json template)
+refscan fetch <paper>            # auto-download PDFs from arXiv / S2 / OpenAlex / Unpaywall
+refscan track <paper>            # see what's downloaded vs. still missing
+# Drop any still-missing PDFs into literature/refs/{BIBKEY}.pdf by hand.
 ```
 
-Or run the individual commands (`track`, `scan`, `verify`, `sanity-stats`) as needed — `check` just bundles the read-only ones with a single PASS/WARN/FAIL.
+**2. Verify the references are real (and not retracted)** — *the AI-era check*
+```bash
+refscan verify <paper>           # arXiv + S2 + OpenAlex + Crossref; flags fabricated + 🚨 retracted
+refscan fix    <paper>           # preview safe metadata fixes (DOIs, drifted years)
+refscan fix    <paper> --apply   # write them (a references.bib.bak backup is made first)
+```
+
+**3. Check the prose against your sources**
+```bash
+refscan scan    <paper>          # exact: verbatim / lightly-edited copying, confidence-ranked
+refscan semscan <paper>          # semantic: paraphrase (needs refscan[semantic-lite|semantic])
+```
+
+**4. One-shot verdict + a shareable report**
+```bash
+refscan check <paper> --verify --html      # sanity + scan + verify → PASS/WARN/FAIL + report.html
+# exits non-zero on FAIL — drop it into CI or a pre-commit hook (see below)
+```
+
+**5. (optional) Sanity-check the bibliography's shape**
+```bash
+refscan sanity-stats <paper>               # hygiene: undefined cites, dupes, missing fields
+refscan refstats     <paper> --author Doe  # recency, median age, self-citation share
+```
+
+Everything writes a markdown report to `literature/`; `check` is the recommended single entry point and bundles the read-only checks with one verdict.
 
 ## Interpreting findings
 
@@ -274,7 +298,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-207 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
+209 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 Terminal output is colorized when stdout is a TTY; it stays plain when piped or when `NO_COLOR` is set (and you can force it with `FORCE_COLOR=1`).
 
