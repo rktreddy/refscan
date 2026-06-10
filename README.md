@@ -174,7 +174,16 @@ pip install 'refscan[semantic-lite]'   # light: model2vec — NumPy only, no tor
 pip install 'refscan[semantic]'        # full:  sentence-transformers — torch (~2 GB), best fidelity
 ```
 
-`semscan` auto-detects whichever is installed (prefers the higher-fidelity one if both); override with `--backend model2vec|sentence-transformers`. The first run downloads a small model. It's slower than `scan` — best as a final pre-submission pass. Without a backend installed, the command exits with an install hint.
+**Choosing / switching the backend.** It's one command with a `--backend` flag — not two commands. `semscan` auto-detects whichever backend is installed (preferring the higher-fidelity `sentence-transformers` if both are present); a backend only works if its package is installed.
+
+```bash
+refscan semscan <paper_dir>                                  # auto: best installed backend
+refscan semscan <paper_dir> --backend model2vec              # force the light backend
+refscan semscan <paper_dir> --backend sentence-transformers  # force the full backend
+refscan semscan <paper_dir> --threshold 0.83                 # stricter — fewer topical hits
+```
+
+The first run downloads a small model. `semscan` is slower than `scan`, so it's best as a final pre-submission pass; treat its output as a review list (technical definitions and properly-attributed summaries are expected to score high). Without a backend installed, the command exits with an install hint.
 
 ### `refscan verify <paper_dir> [--no-s2] [--refresh] [--out PATH]`
 Check each bib entry against arXiv, Semantic Scholar, OpenAlex, and Crossref — together they index preprints, journals, conference proceedings, and books across all fields, so a real non-arXiv paper (Nature, IEEE, ACM, biomed, humanities) is far less likely to be falsely flagged. It also **flags retracted papers** (via OpenAlex's retraction data) in a dedicated 🚨 section — citing retracted work is as serious as a fabricated citation, and `check --verify` treats it as a FAIL. Each entry gets a verdict: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (the lookup itself failed — *not* treated as fabricated). Output: `literature/verification_report.md`. Results are cached at `literature/verify_cache.json` and keyed by bib key plus title/author/year, so correcting an entry and re-running picks up the change without `--refresh`; `api-error` results are never cached.
