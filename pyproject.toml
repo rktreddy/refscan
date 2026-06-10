@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "refscan"
-version = "0.13.1"
+version = "0.14.0"
 description = "Reference-PDF collection and paper-vs-references plagiarism scanning for research papers"
 authors = [{ name = "Ramakrishna Tipireddy", email = "rktreddy@gmail.com" }]
 readme = "README.md"
