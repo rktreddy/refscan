@@ -14,9 +14,10 @@ Stdlib-only at runtime (uses `pdftotext` from poppler for PDF text extraction).
 
 ## Capabilities
 
-One CLI, eleven subcommands (details in [Commands](#commands)):
+One CLI, twelve subcommands (details in [Commands](#commands)):
 
-- **`check`** — ⭐ one-shot: run sanity + scan (+ optional verify) and print a **PASS / WARN / FAIL** verdict; `--html` writes a shareable report
+- **`check`** — ⭐ one-shot: run sanity + scan (+ optional verify) and print a **PASS / WARN / FAIL** verdict; `--html`/`--json`/`--sarif` write shareable / machine-readable reports
+- **`refstats`** — reference-balance stats (recency, median age, self-citation share)
 - **`init`** — scaffold `literature/` + a `refscan.json` template
 - **`fetch`** — download cited PDFs from arXiv, Semantic Scholar, OpenAlex + Unpaywall (parallel)
 - **`track`** — categorize references (downloaded / fetchable / pre-arXiv / skip / verify-exists)
@@ -107,7 +108,7 @@ Configurable keys (all optional, all relative to the paper dir):
 ## Commands
 
 ### `refscan check <paper_dir> [--verify] [--html] [--bib P] [--sections P]`
-One-shot integrity check — the recommended entry point. Prints the resolved layout, runs **`sanity-stats`** and **`scan`** (and **`verify`** with `--verify`, which uses the network), writes the individual reports, and ends with a single **PASS / WARN / FAIL** verdict. Exits non-zero on **FAIL** (a bib error, a fabricated reference, or a retracted one), so it drops straight into CI or a pre-commit hook. Add **`--html`** to also write a self-contained `literature/report.html` — one shareable file combining the verdict, color-coded scan findings (with side-by-side paper-vs-source context), bib hygiene, and any retracted/not-found references.
+One-shot integrity check — the recommended entry point. Prints the resolved layout, runs **`sanity-stats`** and **`scan`** (and **`verify`** with `--verify`, which uses the network), writes the individual reports, and ends with a single **PASS / WARN / FAIL** verdict. Exits non-zero on **FAIL** (a bib error, a fabricated reference, or a retracted one), so it drops straight into CI or a pre-commit hook. Add **`--html`** to also write a self-contained `literature/report.html` — one shareable file combining the verdict, color-coded scan findings (with side-by-side paper-vs-source context), bib hygiene, and any retracted/not-found references. **`--json`** writes a machine-readable `report.json`; **`--sarif`** writes `report.sarif` (SARIF 2.1.0) so a GitHub workflow can upload it and show **inline PR annotations** on fabricated/retracted references and scan matches.
 
 ```
 refscan check: my-paper
@@ -158,6 +159,9 @@ Detect shared n-word passages across two or more papers. Useful as a self-plagia
 
 ### `refscan sanity-stats <paper_dir> [--out PATH]`
 Bib hygiene report. Surfaces undefined cites, unused entries, duplicate keys, duplicate titles, missing required fields, suspicious years, and stub authors. Exits with code 1 on any errors, 0 otherwise — useful in CI. Output: `literature/sanity_report.md`.
+
+### `refscan refstats <paper_dir> [--author SURNAME ...] [--out PATH]`
+Reference-balance stats — the *presentation* signals reviewers complain about (distinct from integrity). Reports recency (% of references within the last 5 / 10 years, median year, range), an optional **self-citation share** when you pass your surname(s) via `--author`, and a by-year histogram. Bib-only, no network. Output: `literature/reference_stats.md`.
 
 ### `refscan verify <paper_dir> [--no-s2] [--refresh] [--out PATH]`
 Check each bib entry against arXiv, Semantic Scholar, OpenAlex, and Crossref — together they index preprints, journals, conference proceedings, and books across all fields, so a real non-arXiv paper (Nature, IEEE, ACM, biomed, humanities) is far less likely to be falsely flagged. It also **flags retracted papers** (via OpenAlex's retraction data) in a dedicated 🚨 section — citing retracted work is as serious as a fabricated citation, and `check --verify` treats it as a FAIL. Each entry gets a verdict: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (the lookup itself failed — *not* treated as fabricated). Output: `literature/verification_report.md`. Results are cached at `literature/verify_cache.json` and keyed by bib key plus title/author/year, so correcting an entry and re-running picks up the change without `--refresh`; `api-error` results are never cached.
@@ -257,7 +261,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-185 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML report, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
+195 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 Terminal output is colorized when stdout is a TTY; it stays plain when piped or when `NO_COLOR` is set (and you can force it with `FORCE_COLOR=1`).
 
@@ -285,7 +289,7 @@ repos:
     extra-args: "--verify"        # optional: also check refs against arXiv/S2/OpenAlex/Crossref
 ```
 
-Both exit non-zero on a FAIL (bib error, fabricated or retracted reference), so they gate the commit/PR.
+Both exit non-zero on a FAIL (bib error, fabricated or retracted reference), so they gate the commit/PR. For **inline PR annotations**, run `refscan check . --verify --sarif` and upload `literature/report.sarif` with `github/codeql-action/upload-sarif`.
 
 ## Versioning & changelog
 
