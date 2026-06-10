@@ -188,7 +188,9 @@ refscan semscan <paper_dir> --backend sentence-transformers  # force the full ba
 refscan semscan <paper_dir> --threshold 0.83                 # stricter — fewer topical hits
 ```
 
-The first run downloads a small model. `semscan` is slower than `scan`, so it's best as a final pre-submission pass; treat its output as a review list (technical definitions and properly-attributed summaries are expected to score high). Without a backend installed, the command exits with an install hint.
+The first run downloads a small model. `semscan` is slower than `scan`, so it's best as a final pre-submission pass; treat its output as a review list (technical definitions and properly-attributed summaries are expected to score high). Without a backend installed, the command exits with an install hint. In `auto` mode, if a backend is installed but fails to load (e.g. a torch/NumPy version conflict), `semscan` transparently falls back to a working one.
+
+> **model2vec is the recommended backend** — lighter, no torch, and works everywhere. The `sentence-transformers` backend needs a recent PyTorch (≥ 2.4); on **Intel macOS** PyTorch is capped at 2.2.2, so use model2vec there.
 
 ### `refscan verify <paper_dir> [--no-s2] [--refresh] [--out PATH]`
 Check each bib entry against arXiv, Semantic Scholar, OpenAlex, and Crossref — together they index preprints, journals, conference proceedings, and books across all fields, so a real non-arXiv paper (Nature, IEEE, ACM, biomed, humanities) is far less likely to be falsely flagged. It also **flags retracted papers** (via OpenAlex's retraction data) in a dedicated 🚨 section — citing retracted work is as serious as a fabricated citation, and `check --verify` treats it as a FAIL. Each entry gets a verdict: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (the lookup itself failed — *not* treated as fabricated). Output: `literature/verification_report.md`. Results are cached at `literature/verify_cache.json` and keyed by bib key plus title/author/year, so correcting an entry and re-running picks up the change without `--refresh`; `api-error` results are never cached.
@@ -314,7 +316,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-211 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
+214 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 Terminal output is colorized when stdout is a TTY; it stays plain when piped or when `NO_COLOR` is set (and you can force it with `FORCE_COLOR=1`).
 

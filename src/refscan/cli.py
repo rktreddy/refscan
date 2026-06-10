@@ -367,8 +367,7 @@ def cmd_semscan(args: argparse.Namespace) -> int:
     except ImportError as ex:
         print(f"error: {ex}", file=sys.stderr)
         return 1
-    chosen = args.backend if args.backend not in (None, "auto") \
-        else semantic.available_backends()[0]
+    chosen = getattr(embed, "backend", "semantic")
     print(f"embedding {len(paper_units)} paper + {len(ref_units)} reference "
           f"sentences with {chosen} (first run downloads the model)...", flush=True)
     findings = semantic.semantic_findings(paper_units, ref_units, embed,

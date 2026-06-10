@@ -5,6 +5,17 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.1] — 2026-06-10
+
+### Fixed
+- **`semscan` no longer crashes on a broken embedding backend.** If a backend
+  is installed but fails to import (e.g. a torch / NumPy / transformers version
+  conflict — common on Intel macOS, where PyTorch is capped at 2.2.2),
+  `--backend auto` now **falls back** to the next working backend instead of
+  dumping a traceback, and an explicitly named broken backend yields a clear
+  error suggesting `--backend model2vec`. `semscan` also reports the backend
+  that actually loaded.
+
 ## [0.21.0] — 2026-06-10
 
 ### Changed

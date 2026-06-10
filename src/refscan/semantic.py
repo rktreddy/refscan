@@ -43,25 +43,9 @@ def available() -> bool:
     return bool(available_backends())
 
 
-def get_embedder(backend: str | None = None, model: str | None = None):
-    """Return ``embed(texts) -> vectors`` (L2-normalized), or raise ImportError.
-
-    ``backend`` is one of ``model2vec`` / ``sentence-transformers``; ``None`` or
-    ``"auto"`` picks the best installed one. ``model`` defaults to that backend's
-    standard model. Vectors are NumPy arrays; :func:`semantic_findings` also
-    accepts lists.
-    """
-    avail = available_backends()
-    if backend in (None, "auto"):
-        backend = avail[0] if avail else None
-    if backend is None:
-        raise ImportError("semantic scan needs deps: " + _INSTALL_HINT)
-    if backend not in avail:
-        raise ImportError(
-            f"backend '{backend}' is not installed (available: {avail or 'none'}). "
-            + _INSTALL_HINT)
+def _load(backend: str, model: str | None):
+    """Load one backend's embedder. May raise on a broken/conflicting install."""
     model = model or _DEFAULT_MODEL[backend]
-
     import numpy as np
     if backend == "model2vec":
         from model2vec import StaticModel
@@ -79,7 +63,44 @@ def get_embedder(backend: str | None = None, model: str | None = None):
         def embed(texts):
             return m.encode(list(texts), convert_to_numpy=True,
                             normalize_embeddings=True, show_progress_bar=False)
+    embed.backend = backend  # type: ignore[attr-defined]
     return embed
+
+
+def get_embedder(backend: str | None = None, model: str | None = None):
+    """Return ``embed(texts) -> vectors`` (L2-normalized), or raise ImportError.
+
+    ``backend`` is ``model2vec`` / ``sentence-transformers``; ``None`` or
+    ``"auto"`` tries installed backends in preference order and returns the first
+    that **loads cleanly** — so a broken/incompatible backend (e.g. a torch/NumPy
+    version conflict) transparently falls back to a working one. A specific
+    ``backend`` that fails to load raises a clear error. Vectors are NumPy arrays;
+    :func:`semantic_findings` also accepts lists.
+    """
+    avail = available_backends()
+    if backend in (None, "auto"):
+        if not avail:
+            raise ImportError("semantic scan needs deps: " + _INSTALL_HINT)
+        problems = []
+        for b in avail:
+            try:
+                return _load(b, model)
+            except Exception as ex:  # broken install / version conflict / download
+                problems.append(f"{b} ({type(ex).__name__}: {ex})")
+        raise ImportError("all installed semantic backends failed to load: "
+                          + "; ".join(problems) + ". " + _INSTALL_HINT)
+    if backend not in avail:
+        raise ImportError(
+            f"backend '{backend}' is not installed (available: {avail or 'none'}). "
+            + _INSTALL_HINT)
+    try:
+        return _load(backend, model)
+    except Exception as ex:
+        raise ImportError(
+            f"backend '{backend}' is installed but failed to load "
+            f"({type(ex).__name__}: {ex}). Usually a torch/numpy/transformers "
+            "version conflict — try `--backend model2vec`, or reinstall the backend."
+        ) from ex
 
 
 def split_sentences(text: str, min_words: int = 6) -> list[str]:
