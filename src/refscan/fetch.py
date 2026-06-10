@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -500,43 +501,61 @@ def fetch_paper(bib_entries: list[BibEntry], refs_dir: Path,
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
+    from .progress import bar as _bar
+    from .progress import is_tty
+
     refs_dir.mkdir(parents=True, exist_ok=True)
     results: list[dict] = []
     to_download: list[tuple[BibEntry, str, str, Path]] = []
+    n = len(bib_entries)
+    # Use a redrawing bar only on an interactive terminal; otherwise keep the
+    # line-per-entry output so piped/CI logs stay readable.
+    use_bar = progress and is_tty()
+
+    def _clear() -> None:
+        sys.stdout.write("\r" + " " * 72 + "\r")
+        sys.stdout.flush()
 
     # Phase 1: resolve URLs (sequential, rate-limited).
     for i, e in enumerate(bib_entries, 1):
+        if use_bar:
+            sys.stdout.write("\r" + _bar(i, n, "resolving") + f" {e.key[:26]:<26}")
+            sys.stdout.flush()
         dest = ref_pdf_path(refs_dir, e.key)
         if dest is None:
             results.append({"key": e.key, "status": "unsafe-key",
                              "source": None, "url": None})
-            if progress:
-                print(f"[{i}/{len(bib_entries)}] {e.key}: unsafe key — skipped",
-                      flush=True)
+            if progress and not use_bar:
+                print(f"[{i}/{n}] {e.key}: unsafe key — skipped", flush=True)
             continue
         if dest.exists():
             results.append({"key": e.key, "status": "already-present",
                              "source": None, "url": None})
-            if progress:
-                print(f"[{i}/{len(bib_entries)}] {e.key}: already present", flush=True)
+            if progress and not use_bar:
+                print(f"[{i}/{n}] {e.key}: already present", flush=True)
             continue
-        if progress:
-            print(f"[{i}/{len(bib_entries)}] {e.key}: resolving...", end=" ", flush=True)
+        if progress and not use_bar:
+            print(f"[{i}/{n}] {e.key}: resolving...", end=" ", flush=True)
         url, source = resolve_pdf_url(e, user_agent, try_s2)
         if url:
             to_download.append((e, url, source, dest))
-            if progress:
+            if progress and not use_bar:
                 print(f"→ {source}", flush=True)
         else:
             results.append({"key": e.key, "status": "not-found",
                              "source": None, "url": None})
-            if progress:
+            if progress and not use_bar:
                 print("not found", flush=True)
+    if use_bar:
+        _clear()
+        print(f"resolved {n} entries · {len(to_download)} to download", flush=True)
 
     # Phase 2: parallel download.
-    if to_download and progress:
+    if to_download and progress and not use_bar:
         print(f"\ndownloading {len(to_download)} PDFs (max_workers={max_workers})...",
               flush=True)
+    m = len(to_download)
+    done = n_ok = 0
     with ThreadPoolExecutor(max_workers=max(1, max_workers)) as ex:
         future_to_meta = {
             ex.submit(download_pdf, url, dest, user_agent): (e, url, source, dest)
@@ -545,6 +564,8 @@ def fetch_paper(bib_entries: list[BibEntry], refs_dir: Path,
         for future in as_completed(future_to_meta):
             e, url, source, _ = future_to_meta[future]
             ok = future.result()
+            done += 1
+            n_ok += int(ok)
             results.append({
                 "key": e.key,
                 "status": "downloaded" if ok else "download-failed",
@@ -553,6 +574,14 @@ def fetch_paper(bib_entries: list[BibEntry], refs_dir: Path,
             })
             if progress:
                 tag = "✓" if ok else "✗"
-                print(f"  {tag} {e.key}", flush=True)
+                if use_bar:
+                    sys.stdout.write("\r" + _bar(done, m, "downloading")
+                                     + f" {tag} {e.key[:24]:<24}")
+                    sys.stdout.flush()
+                else:
+                    print(f"  {tag} {e.key}", flush=True)
+    if use_bar and m:
+        _clear()
+        print(f"downloaded {n_ok}/{m}", flush=True)
 
     return results
