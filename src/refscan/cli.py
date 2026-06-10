@@ -364,6 +364,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         _degrade("WARN")
 
     # Scan (offline)
+    scan_result = None
     if n_sec == 0:
         lines.append("  scan:    skipped (no section .tex files found)")
         _degrade("WARN")
@@ -371,21 +372,23 @@ def cmd_check(args: argparse.Namespace) -> int:
         lines.append("  scan:    skipped (no reference PDFs — run `refscan fetch`)")
         _degrade("WARN")
     else:
-        result = scan(section_files=list(layout.section_files), refs_dir=layout.refs_dir,
-                      cache_dir=layout.cache_dir, shingle_n=args.shingle_n, min_run=args.min_run)
-        findings = result["findings"]
+        scan_result = scan(section_files=list(layout.section_files), refs_dir=layout.refs_dir,
+                           cache_dir=layout.cache_dir, shingle_n=args.shingle_n, min_run=args.min_run)
+        findings = scan_result["findings"]
         top = findings[0]["score"] if findings else 0.0
-        layout.findings_md.write_text(render_findings_md(label, result, scan_date=_today()))
+        layout.findings_md.write_text(render_findings_md(label, scan_result, scan_date=_today()))
         lines.append(f"  scan:    {len(findings)} finding(s), top confidence {top:.2f}  "
-                     f"({len(result['refs_indexed'])} refs indexed)")
+                     f"({len(scan_result['refs_indexed'])} refs indexed)")
         if findings and top >= 0.5:
             _degrade("WARN")
 
     # Verify (network, opt-in)
+    verify_results = None
     if args.verify:
         use_s2 = not args.no_s2
         results = verify_paper(paper_dir=paper_dir, use_s2=use_s2,
                                refresh=args.refresh, bib=args.bib, progress=False)
+        verify_results = results
         vc: dict[str, int] = {}
         for r in results:
             vc[r.verdict] = vc.get(r.verdict, 0) + 1
@@ -404,6 +407,14 @@ def cmd_check(args: argparse.Namespace) -> int:
             _degrade("WARN")
     else:
         lines.append("  verify:  skipped (pass --verify to check refs against arXiv/S2; uses network)")
+
+    if args.html:
+        from .report import render_html_report
+        html_path = layout.literature_dir / "report.html"
+        html_path.write_text(render_html_report(
+            label, status=status, scan_date=_today(),
+            sanity_issues=issues, scan_result=scan_result, verify_results=verify_results))
+        lines.append(f"  html:    {html_path}")
 
     print("results:")
     for ln in lines:
@@ -536,6 +547,8 @@ def build_parser() -> argparse.ArgumentParser:
     pck.add_argument("--sections", help=_SECTIONS_HELP)
     pck.add_argument("--verify", action="store_true",
                      help="also verify bib entries against arXiv/Semantic Scholar (network)")
+    pck.add_argument("--html", action="store_true",
+                     help="also write a self-contained literature/report.html")
     pck.add_argument("--no-s2", action="store_true",
                      help="with --verify: skip Semantic Scholar (arXiv only)")
     pck.add_argument("--refresh", action="store_true",
