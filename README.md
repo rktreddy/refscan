@@ -128,7 +128,7 @@ results:
 Scaffold `literature/refs/`, `literature/pdf_text_cache/`, write an initial `reference_tracking.md`, and (if absent) a `refscan.json` config template.
 
 ### `refscan fetch <paper_dir> [--no-s2] [--workers N]`
-Parse `paper/references.bib`. For each entry, resolve a PDF in order: explicit arXiv ID in the bib → arXiv title/author search → Semantic Scholar (unless `--no-s2`) → OpenAlex open-access PDF → Unpaywall (when the entry has a DOI). Download PDFs into `literature/refs/{BIBKEY}.pdf`. Downloads are validated as real PDFs (`%PDF` header), so open-access landing-page HTML is never saved as a `.pdf`. URL resolution is sequential and rate-limited per arXiv/S2 guidelines; downloads run in parallel via a thread pool (default 5 workers, set `--workers 1` for fully sequential). Bib keys that contain path separators or `..` traversal components are reported as `unsafe-key` and skipped, so a reference file can never write outside `literature/refs/`.
+Parse `paper/references.bib`. For each entry, resolve a PDF in order: explicit arXiv ID in the bib → arXiv title/author search → Semantic Scholar (unless `--no-s2`) → OpenAlex open-access PDF → Unpaywall (when the entry has a DOI). Download PDFs into `literature/refs/{BIBKEY}.pdf`. Downloads are validated as real PDFs (`%PDF` header), so open-access landing-page HTML is never saved as a `.pdf`. On an interactive terminal you get a live progress bar; piped/CI output stays line-per-entry. URL resolution is sequential and rate-limited per arXiv/S2 guidelines; downloads run in parallel via a thread pool (default 5 workers, set `--workers 1` for fully sequential). Bib keys that contain path separators or `..` traversal components are reported as `unsafe-key` and skipped, so a reference file can never write outside `literature/refs/`.
 
 ### `refscan track <paper_dir>`
 Regenerate `literature/reference_tracking.md` based on what's currently in `literature/refs/`. Each entry is bucketed as downloaded / fetchable / pre-arXiv / skip-book / skip-software / verify-exists.
@@ -261,7 +261,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-195 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
+200 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 Terminal output is colorized when stdout is a TTY; it stays plain when piped or when `NO_COLOR` is set (and you can force it with `FORCE_COLOR=1`).
 
