@@ -332,7 +332,11 @@ Both exit non-zero on a FAIL (bib error, fabricated or retracted reference), so 
 
 ## Versioning & changelog
 
-See [`CHANGELOG.md`](CHANGELOG.md). Releases follow [Semantic Versioning](https://semver.org/).
+See [`CHANGELOG.md`](CHANGELOG.md). Releases follow [Semantic Versioning](https://semver.org/). Pre-1.0 — interfaces may still change.
+
+## Project status
+
+A personal project, maintained on a **best-effort basis**. Issues and pull requests are welcome (see [`CONTRIBUTING.md`](CONTRIBUTING.md)), but reviews may be slow. Provided as-is under MIT — use it freely. Security reports: see [`SECURITY.md`](SECURITY.md).
 
 ## License
 
