@@ -5,6 +5,18 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] — 2026-06-10
+
+### Added
+- **`refscan semscan`** — optional semantic / near-duplicate scan. Compares
+  sentence embeddings between your prose and each cited reference to flag
+  **paraphrase** (same meaning, different words) that the exact-shingle `scan`
+  misses. Needs the optional `refscan[semantic]` extra (sentence-transformers);
+  the base package stays stdlib-only and never imports the heavy deps. The
+  matching core is pure Python (NumPy used only when present); the command
+  exits with an install hint when the extra is absent. New `semantic.py` and a
+  `[project.optional-dependencies] semantic` group.
+
 ## [0.18.0] — 2026-06-09
 
 ### Added
