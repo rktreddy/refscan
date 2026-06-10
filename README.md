@@ -21,7 +21,7 @@ One CLI, eleven subcommands (details in [Commands](#commands)):
 - **`fetch`** — download cited PDFs from arXiv, Semantic Scholar, OpenAlex + Unpaywall (parallel)
 - **`track`** — categorize references (downloaded / fetchable / pre-arXiv / skip / verify-exists)
 - **`scan`** — shingle-match prose against references, ranked by a confidence score
-- **`verify`** — flag likely-fabricated or metadata-drifted bib entries against arXiv, S2, OpenAlex + Crossref (all fields)
+- **`verify`** — flag likely-fabricated, metadata-drifted, or **retracted** bib entries against arXiv, S2, OpenAlex + Crossref (all fields)
 - **`fix`** — auto-apply safe metadata corrections from verify matches (add DOIs, fix drifted years); preview by default
 - **`sanity-stats`** — bib hygiene report (undefined cites, dupes, missing fields, …), CI-friendly exit code
 - **`watch`** — re-scan on `.tex` save while drafting
@@ -160,7 +160,7 @@ Detect shared n-word passages across two or more papers. Useful as a self-plagia
 Bib hygiene report. Surfaces undefined cites, unused entries, duplicate keys, duplicate titles, missing required fields, suspicious years, and stub authors. Exits with code 1 on any errors, 0 otherwise — useful in CI. Output: `literature/sanity_report.md`.
 
 ### `refscan verify <paper_dir> [--no-s2] [--refresh] [--out PATH]`
-Check each bib entry against arXiv, Semantic Scholar, OpenAlex, and Crossref — together they index preprints, journals, conference proceedings, and books across all fields, so a real non-arXiv paper (Nature, IEEE, ACM, biomed, humanities) is far less likely to be falsely flagged. Each entry gets a verdict: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (the lookup itself failed — *not* treated as fabricated). Output: `literature/verification_report.md`. Results are cached at `literature/verify_cache.json` and keyed by bib key plus title/author/year, so correcting an entry and re-running picks up the change without `--refresh`; `api-error` results are never cached.
+Check each bib entry against arXiv, Semantic Scholar, OpenAlex, and Crossref — together they index preprints, journals, conference proceedings, and books across all fields, so a real non-arXiv paper (Nature, IEEE, ACM, biomed, humanities) is far less likely to be falsely flagged. It also **flags retracted papers** (via OpenAlex's retraction data) in a dedicated 🚨 section — citing retracted work is as serious as a fabricated citation, and `check --verify` treats it as a FAIL. Each entry gets a verdict: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (the lookup itself failed — *not* treated as fabricated). Output: `literature/verification_report.md`. Results are cached at `literature/verify_cache.json` and keyed by bib key plus title/author/year, so correcting an entry and re-running picks up the change without `--refresh`; `api-error` results are never cached.
 
 **API keys & etiquette:** OpenAlex and Crossref need no key (refscan uses their polite pools). Identify yourself to them — and to Unpaywall — by setting a contact email:
 
@@ -257,7 +257,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-168 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching), bib auto-fix, sanity checks, tracking/config, layout resolution + auto-detection, the `check` verdict, cross-paper overlap, and the release flow. Lint with `ruff check`.
+176 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, tracking/config, layout resolution + auto-detection, the `check` verdict, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 ## Versioning & changelog
 

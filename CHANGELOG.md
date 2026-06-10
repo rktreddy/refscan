@@ -5,6 +5,17 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] — 2026-06-09
+
+### Added
+- **Retraction detection.** `verify` now flags references whose confident
+  OpenAlex match is marked retracted (`is_retracted`), reusing the OpenAlex
+  calls it already makes — no extra network. The verification report leads with
+  a **🚨 Retracted papers** section; `verify`'s summary and `refscan check
+  --verify` show the count and treat any retraction as a **FAIL** (citing
+  retracted work is as serious as a fabricated citation). `APIResult` and
+  `VerifyResult` gain a `retracted` flag.
+
 ## [0.13.1] — 2026-06-09
 
 ### Fixed
