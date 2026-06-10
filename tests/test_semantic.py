@@ -57,6 +57,40 @@ def test_get_embedder_raises_when_backend_absent(monkeypatch) -> None:
         get_embedder(backend="model2vec")
 
 
+def test_auto_falls_back_to_working_backend(monkeypatch) -> None:
+    # sentence-transformers installed but broken (e.g. torch/numpy conflict);
+    # auto must fall back to the working model2vec rather than crash.
+    monkeypatch.setattr(semantic, "available_backends",
+                        lambda: ["sentence-transformers", "model2vec"])
+
+    def fake_load(b, model):
+        if b == "sentence-transformers":
+            raise RuntimeError("torch/numpy version conflict")
+        return "MODEL2VEC_EMBEDDER"
+
+    monkeypatch.setattr(semantic, "_load", fake_load)
+    assert get_embedder() == "MODEL2VEC_EMBEDDER"
+
+
+def test_specified_broken_backend_raises_clean(monkeypatch) -> None:
+    monkeypatch.setattr(semantic, "available_backends", lambda: ["sentence-transformers"])
+
+    def boom(b, model):
+        raise RuntimeError("torch too old")
+
+    monkeypatch.setattr(semantic, "_load", boom)
+    with pytest.raises(ImportError, match="failed to load|--backend model2vec"):
+        get_embedder(backend="sentence-transformers")
+
+
+def test_auto_raises_when_all_backends_broken(monkeypatch) -> None:
+    monkeypatch.setattr(semantic, "available_backends", lambda: ["model2vec"])
+    monkeypatch.setattr(semantic, "_load",
+                        lambda b, model: (_ for _ in ()).throw(RuntimeError("nope")))
+    with pytest.raises(ImportError, match="all installed semantic backends failed"):
+        get_embedder()
+
+
 def test_split_sentences_min_words() -> None:
     s = split_sentences("Short one. This sentence has more than six words in it. Hi.",
                         min_words=6)
