@@ -48,9 +48,14 @@ def compute_fixes(entries: list[BibEntry],
             continue  # only confident matches
         if bm.doi and not e.doi:
             fixes.append(BibFix(e.key, "doi", "", bm.doi, bm.source, "add missing DOI"))
-        if bm.year and e.year and bm.year != e.year and bm.author_match:
+        # Year fixes only from publication-year sources. arXiv/S2 report the
+        # *preprint* submission year, which is legitimately a year before the
+        # conference/journal year a bib usually cites — "correcting" toward it
+        # would corrupt a correct entry. Crossref/OpenAlex give the published year.
+        if (bm.year and e.year and bm.year != e.year and bm.author_match
+                and bm.source in ("crossref", "openalex")):
             fixes.append(BibFix(e.key, "year", e.year, bm.year, bm.source,
-                                "year disagrees with matched record"))
+                                "year disagrees with published record"))
     return fixes
 
 

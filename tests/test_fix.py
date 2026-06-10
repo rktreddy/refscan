@@ -11,8 +11,8 @@ from refscan.verify import APIResult, VerifyResult
 
 
 def _result(key: str, *, title_overlap: float, year: str = "", doi: str = "",
-            author_match: bool = True) -> VerifyResult:
-    bm = APIResult(source="crossref", title="t", authors=["a"], year=year, doi=doi,
+            author_match: bool = True, source: str = "crossref") -> VerifyResult:
+    bm = APIResult(source=source, title="t", authors=["a"], year=year, doi=doi,
                    title_overlap=title_overlap, author_match=author_match)
     return VerifyResult(key=key, bib_title="t", bib_first_author="a", bib_year="",
                         bib_pdf_present=False, verdict="metadata-drift", best_match=bm)
@@ -43,6 +43,30 @@ def test_skips_year_when_author_does_not_match() -> None:
     r = _result("k", title_overlap=0.9, year="2020", author_match=False)
     fixes = compute_fixes([e], {"k": r})
     assert all(f.field != "year" for f in fixes)
+
+
+def test_skips_year_fix_from_arxiv_preprint() -> None:
+    # arXiv reports the preprint year (often a year before publication) — must
+    # NOT drive a year "correction" of a correct conference/journal year.
+    e = BibEntry("k", "article", {"title": "LoRA", "author": "Hu", "year": "2022"})
+    r = _result("k", title_overlap=0.95, year="2021", source="arxiv")
+    fixes = compute_fixes([e], {"k": r})
+    assert all(f.field != "year" for f in fixes)
+
+
+def test_skips_year_fix_from_s2() -> None:
+    e = BibEntry("k", "article", {"title": "T", "author": "Hu", "year": "2022"})
+    r = _result("k", title_overlap=0.95, year="2021", source="s2")
+    fixes = compute_fixes([e], {"k": r})
+    assert all(f.field != "year" for f in fixes)
+
+
+def test_doi_fix_still_allowed_from_arxiv_match() -> None:
+    # Year is gated to crossref/openalex, but a DOI is unambiguous from any source.
+    e = BibEntry("k", "article", {"title": "T", "author": "Hu", "year": "2022"})
+    r = _result("k", title_overlap=0.95, year="2021", doi="10.1/abc", source="arxiv")
+    fixes = compute_fixes([e], {"k": r})
+    assert [(f.field, f.new) for f in fixes] == [("doi", "10.1/abc")]
 
 
 def test_ignores_low_confidence_match() -> None:

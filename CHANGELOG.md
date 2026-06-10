@@ -5,6 +5,17 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1] — 2026-06-09
+
+### Fixed
+- `refscan fix` no longer proposes year "corrections" sourced from arXiv or
+  Semantic Scholar, which report the **preprint** submission year — frequently
+  a year before the conference/journal year a bib correctly cites (e.g. LoRA's
+  ICLR-2022 entry "corrected" to the 2021 preprint). Year fixes now come only
+  from publication-year sources (Crossref / OpenAlex); DOI additions are
+  unaffected. Surfaced by running `fix` in preview on a real 35-entry
+  bibliography (9 false year fixes → 0).
+
 ## [0.13.0] — 2026-06-09
 
 ### Added
