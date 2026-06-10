@@ -5,6 +5,17 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] — 2026-06-09
+
+### Added
+- **`refscan fix`** — applies the safe bib-metadata corrections that `verify`'s
+  matches imply: **adds missing DOIs** and **corrects drifted years** (only for
+  entries with a confident match, and years only when the author also matches).
+  Titles and author lists are never rewritten. Previews by default; `--apply`
+  writes in place after a `references.bib.bak` backup, preserving surrounding
+  formatting. New `fix.py` (`compute_fixes`, `apply_fixes`) and `BibEntry.doi`
+  is reused for DOI detection.
+
 ## [0.12.0] — 2026-06-09
 
 ### Added

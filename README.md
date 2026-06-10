@@ -14,7 +14,7 @@ Stdlib-only at runtime (uses `pdftotext` from poppler for PDF text extraction).
 
 ## Capabilities
 
-One CLI, ten subcommands (details in [Commands](#commands)):
+One CLI, eleven subcommands (details in [Commands](#commands)):
 
 - **`check`** — ⭐ one-shot: run sanity + scan (+ optional verify) and print a **PASS / WARN / FAIL** verdict
 - **`init`** — scaffold `literature/` + a `refscan.json` template
@@ -22,6 +22,7 @@ One CLI, ten subcommands (details in [Commands](#commands)):
 - **`track`** — categorize references (downloaded / fetchable / pre-arXiv / skip / verify-exists)
 - **`scan`** — shingle-match prose against references, ranked by a confidence score
 - **`verify`** — flag likely-fabricated or metadata-drifted bib entries against arXiv, S2, OpenAlex + Crossref (all fields)
+- **`fix`** — auto-apply safe metadata corrections from verify matches (add DOIs, fix drifted years); preview by default
 - **`sanity-stats`** — bib hygiene report (undefined cites, dupes, missing fields, …), CI-friendly exit code
 - **`watch`** — re-scan on `.tex` save while drafting
 - **`overlap`** — cross-paper self-plagiarism check
@@ -175,7 +176,18 @@ export REFSCAN_S2_API_KEY=<your-key>
 
 Even without an S2 key, OpenAlex + Crossref keep `verify`/`fetch` working across fields.
 
-Without a key, S2 will likely 429 mid-run; the report flags this and warns that any "not-found" verdicts checked only against arXiv may be false positives for non-arXiv papers (Nature, IEEE, ACM, books).
+### `refscan fix <paper_dir> [--apply] [--no-s2] [--refresh]`
+Closes the loop on `verify`: applies the safe corrections that verify's matches imply. For each entry whose best match is **confident** (high title overlap), it **adds a missing DOI** and **corrects a drifted year** (only when the author also matches). Titles and author lists are never rewritten — too easy to clobber a correct entry with an API variant.
+
+Safe by default: it **previews** the proposed edits and changes nothing. Re-run with `--apply` to write them — a `references.bib.bak` backup is made first, and surrounding formatting is preserved.
+
+```
+proposed fixes (2):
+  he2015: doi   (none) → 10.1109/CVPR.2016.90   [crossref: add missing DOI]
+  he2015: year  2015 → 2016                     [crossref: year disagrees with matched record]
+
+(preview only — re-run with --apply to write these; a .bak backup is made first)
+```
 
 ### `refscan release {patch|minor|major|X.Y.Z} [--push] [--no-test] [--dry-run]` (maintainer-only)
 For shipping new versions of refscan itself. Validates environment, runs tests, bumps version in `pyproject.toml` and `__init__.py` in lockstep, commits, tags `v{new_version}`, and (with `--push`) pushes to `origin`. Requires editable install + clean working tree on `main` + a CHANGELOG section pre-written for the new version. Use `--dry-run` to preview.
@@ -245,7 +257,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-159 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching), sanity checks, tracking/config, layout resolution + auto-detection, the `check` verdict, cross-paper overlap, and the release flow. Lint with `ruff check`.
+168 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching), bib auto-fix, sanity checks, tracking/config, layout resolution + auto-detection, the `check` verdict, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 ## Versioning & changelog
 
