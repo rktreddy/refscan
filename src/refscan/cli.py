@@ -167,6 +167,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
     for r in results:
         counts[r.verdict] = counts.get(r.verdict, 0) + 1
     print(f"\nwrote {out_path}")
+    n_retracted = sum(1 for r in results if r.retracted)
+    if n_retracted:
+        print(f"  🚨 retracted: {n_retracted}  (see report)")
     for v in ("not-found", "weak-match", "metadata-drift", "verified", "skipped", "api-error"):
         if v in counts:
             print(f"  {v}: {counts[v]}")
@@ -389,11 +392,13 @@ def cmd_check(args: argparse.Namespace) -> int:
         layout.verification_md.write_text(render_verification_md(
             label, results, scan_date=_today(),
             s2_rate_limited=was_rate_limited(), s2_used=use_s2))
+        n_retracted = sum(1 for r in results if r.retracted)
+        retr = f", 🚨 {n_retracted} retracted" if n_retracted else ""
         lines.append(
             f"  verify:  {vc.get('verified', 0)} verified, {vc.get('not-found', 0)} not-found, "
             f"{vc.get('weak-match', 0)} weak, {vc.get('metadata-drift', 0)} drift, "
-            f"{vc.get('api-error', 0)} api-error")
-        if vc.get("not-found", 0):
+            f"{vc.get('api-error', 0)} api-error{retr}")
+        if vc.get("not-found", 0) or n_retracted:
             _degrade("FAIL")
         elif vc.get("weak-match", 0) or vc.get("metadata-drift", 0):
             _degrade("WARN")

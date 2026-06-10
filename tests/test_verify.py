@@ -177,6 +177,36 @@ def test_verify_entry_uses_openalex_when_arxiv_s2_empty() -> None:
     assert best.doi == "10.5555/3295222.3295349"
 
 
+def test_score_candidate_carries_retracted_flag() -> None:
+    e = BibEntry("k", "article", {"title": "Bad Paper", "author": "X", "year": "2015"})
+    cand = {"title": "Bad Paper", "authors": ["X"], "year": "2015", "retracted": True}
+    r = _score_candidate(e, cand, "openalex")
+    assert r.retracted is True
+
+
+def test_verify_paper_flags_retracted_match(tmp_path) -> None:
+    (tmp_path / "paper").mkdir()
+    (tmp_path / "paper" / "references.bib").write_text(
+        "@article{k, title={Bad Paper}, author={X}, year={2015}}\n")
+    (tmp_path / "literature").mkdir()
+    bm = APIResult(source="openalex", title="Bad Paper", authors=["X"], year="2015",
+                   title_overlap=0.95, author_match=True, retracted=True)
+    with patch("refscan.verify.verify_entry", return_value=(bm, [], None)):
+        results = verify_paper(tmp_path, use_s2=False, progress=False)
+    assert results[0].retracted is True
+
+
+def test_render_flags_retracted_section() -> None:
+    bm = APIResult(source="openalex", title="Bad Paper", authors=["X"], year="2015",
+                   doi="10.1/bad", title_overlap=0.95, author_match=True, retracted=True)
+    results = [VerifyResult(key="bad", bib_title="Bad Paper", bib_first_author="X",
+                            bib_year="2015", bib_pdf_present=False, verdict="verified",
+                            best_match=bm, retracted=True)]
+    md = render_verification_md("p", results, scan_date="2026-06-09")
+    assert "Retracted papers (1)" in md
+    assert "`bad`" in md
+
+
 def test_verify_entry_uses_crossref_for_journal_paper() -> None:
     e = BibEntry("k", "article", {"title": "Deep Residual Learning",
                                    "author": "He", "year": "2016"})

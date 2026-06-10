@@ -104,6 +104,21 @@ def test_openalex_search_metadata_request_failure_returns_none() -> None:
         assert openalex_search_metadata("X") is None
 
 
+def test_openalex_search_metadata_carries_retracted() -> None:
+    payload = json.dumps({"results": [{
+        "title": "A Retracted Paper", "publication_year": 2015, "is_retracted": True,
+    }]}).encode()
+    with patch("refscan.fetch._http_get", return_value=(payload, 200)):
+        out = openalex_search_metadata("A Retracted Paper")
+    assert out[0]["retracted"] is True
+
+
+def test_openalex_search_metadata_defaults_retracted_false() -> None:
+    with patch("refscan.fetch._http_get", return_value=(_OA_META, 200)):  # no is_retracted key
+        out = openalex_search_metadata("Neural Ordinary Differential Equations")
+    assert out[0]["retracted"] is False
+
+
 def test_openalex_pdf_url_returns_oa_pdf() -> None:
     payload = json.dumps({"results": [{
         "title": "Neural Ordinary Differential Equations",

@@ -273,7 +273,8 @@ def openalex_search_metadata(title: str, author: str = "",
     """Query OpenAlex (~250M works, all fields) and return up to ``limit`` dicts.
 
     Each dict has ``title``, ``authors``, ``year``, ``arxiv_id`` (usually ""),
-    ``doi``. Returns ``None`` on request failure (vs ``[]`` for no results).
+    ``doi``, ``retracted`` (bool, from OpenAlex's ``is_retracted``). Returns
+    ``None`` on request failure (vs ``[]`` for no results).
     """
     if not title:
         return []
@@ -300,6 +301,7 @@ def openalex_search_metadata(title: str, author: str = "",
             "year": str(w.get("publication_year") or ""),
             "arxiv_id": "",
             "doi": (w.get("doi") or "").replace("https://doi.org/", ""),
+            "retracted": bool(w.get("is_retracted")),
         })
     return out
 
