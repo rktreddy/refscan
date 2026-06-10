@@ -6,6 +6,8 @@ side-by-side paper-vs-source context. Stdlib only — inline CSS, no assets.
 """
 from __future__ import annotations
 
+import json
+from collections import Counter
 from html import escape
 
 _STATUS_COLOR = {"PASS": "#1a7f37", "WARN": "#9a6700", "FAIL": "#cf222e"}
@@ -165,3 +167,104 @@ def render_html_report(paper_label: str, *, status: str = "PASS", scan_date: str
                "open in any browser or share it.</footer>")
     out.append("</body></html>")
     return "".join(out)
+
+
+# --- machine-readable formats --------------------------------------------
+
+def render_json_report(paper_label: str, *, version: str = "", status: str = "PASS",
+                       scan_date: str = "", sanity_issues: list | None = None,
+                       scan_result: dict | None = None,
+                       verify_results: list | None = None) -> str:
+    """Render the combined results as a JSON document (machine-readable)."""
+    sanity_issues = sanity_issues or []
+    doc: dict = {
+        "tool": "refscan",
+        "version": version,
+        "paper": paper_label,
+        "scan_date": scan_date,
+        "status": status,
+        "sanity": {
+            "errors": sum(1 for i in sanity_issues if i.severity == "error"),
+            "warnings": sum(1 for i in sanity_issues if i.severity == "warning"),
+            "issues": [{"severity": i.severity, "category": i.category,
+                        "key": i.key, "message": i.message} for i in sanity_issues],
+        },
+        "scan": None,
+        "verify": None,
+    }
+    if scan_result is not None:
+        findings = scan_result.get("findings", [])
+        doc["scan"] = {
+            "findings": len(findings),
+            "top_score": round(findings[0]["score"], 4) if findings else 0.0,
+            "refs_indexed": len(scan_result.get("refs_indexed", [])),
+            "items": [{"score": round(f["score"], 4), "run_len": f["run_len"],
+                       "bibkey": f["bibkey"], "section": f["section"],
+                       "shingle": f["shingle"]} for f in findings],
+        }
+    if verify_results is not None:
+        vc = Counter(r.verdict for r in verify_results)
+        doc["verify"] = {
+            "verified": vc.get("verified", 0),
+            "not_found": vc.get("not-found", 0),
+            "retracted": sum(1 for r in verify_results if getattr(r, "retracted", False)),
+            "items": [{"key": r.key, "verdict": r.verdict, "title": r.bib_title,
+                       "retracted": bool(getattr(r, "retracted", False))}
+                      for r in verify_results],
+        }
+    return json.dumps(doc, indent=2)
+
+
+_SARIF_LEVEL = {"error": "error", "warning": "warning", "info": "note"}
+
+
+def render_sarif_report(*, version: str = "", bib_uri: str = "references.bib",
+                        section_uris: dict | None = None,
+                        sanity_issues: list | None = None,
+                        scan_result: dict | None = None,
+                        verify_results: list | None = None) -> str:
+    """Render results as SARIF 2.1.0 for GitHub code-scanning annotations."""
+    section_uris = section_uris or {}
+    sanity_issues = sanity_issues or []
+    rules: dict[str, dict] = {}
+    results: list[dict] = []
+
+    def add(rule_id: str, level: str, text: str, uri: str) -> None:
+        rules.setdefault(rule_id, {"id": rule_id})
+        results.append({
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": text},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+        })
+
+    for i in sanity_issues:
+        add(f"sanity/{i.category}", _SARIF_LEVEL.get(i.severity, "note"), i.message, bib_uri)
+    for f in (scan_result or {}).get("findings", []):
+        add("scan/match", "warning",
+            f"{f['run_len']}-word match with reference {f['bibkey']} "
+            f"(confidence {f['score']:.2f}): \"{f['shingle']}\"",
+            section_uris.get(f["section"], f["section"]))
+    for r in (verify_results or []):
+        if r.verdict == "not-found":
+            add("verify/not-found", "error",
+                f"Reference `{r.key}` ({r.bib_title}) not found in "
+                "arXiv/Semantic Scholar/OpenAlex/Crossref — possibly fabricated.", bib_uri)
+        if getattr(r, "retracted", False):
+            add("verify/retracted", "error",
+                f"Reference `{r.key}` ({r.bib_title}) is marked RETRACTED by OpenAlex.", bib_uri)
+
+    doc = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {"driver": {
+                "name": "refscan",
+                "informationUri": "https://github.com/rktreddy/refscan",
+                "version": version,
+                "rules": list(rules.values()),
+            }},
+            "results": results,
+        }],
+    }
+    return json.dumps(doc, indent=2)

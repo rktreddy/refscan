@@ -5,6 +5,20 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] — 2026-06-09
+
+### Added
+- **Machine-readable `check` output** — `--json` writes `literature/report.json`
+  (verdict + sanity/scan/verify results); `--sarif` writes `report.sarif`
+  (SARIF 2.1.0) so a GitHub workflow can upload it and show **inline PR
+  annotations** on fabricated/retracted references and scan matches.
+  New `report.render_json_report` / `report.render_sarif_report`.
+- **`refscan refstats`** — reference-balance stats: recency (% within last
+  5/10 years, median year, range), an optional self-citation share
+  (`--author SURNAME`), and a by-year histogram. The presentation signals
+  reviewers complain about, surfaced before submission. Bib-only, no network.
+  New `refstats.py`.
+
 ## [0.16.0] — 2026-06-09
 
 ### Added

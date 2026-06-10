@@ -325,6 +325,33 @@ def cmd_fix(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_refstats(args: argparse.Namespace) -> int:
+    """Reference-balance stats: recency, age, optional self-citation."""
+    from .refstats import compute_refstats, render_refstats_md
+
+    paper_dir = Path(args.paper_dir).resolve()
+    layout = resolve_layout(paper_dir, bib=args.bib)
+    _note_autodetect(layout)
+    if not layout.bib.exists():
+        print(f"error: no references.bib at {layout.bib}", file=sys.stderr)
+        return 1
+    entries = parse_bib(layout.bib)
+    stats = compute_refstats(entries, dt.date.today().year, author_surnames=args.author)
+    report = render_refstats_md(_paper_label(paper_dir), stats, scan_date=_today())
+    out_path = Path(args.out) if args.out else layout.literature_dir / "reference_stats.md"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(report)
+
+    print(f"wrote {out_path}")
+    print(f"  references: {stats.total}  |  dated: {stats.with_year}")
+    if stats.with_year:
+        print(f"  years: {stats.year_min}–{stats.year_max}  |  median: {stats.median_year}"
+              f"  |  last 5y: {stats.pct_last_5:.0f}%")
+    if stats.self_citations is not None:
+        print(f"  self-citations: {stats.self_citations} ({stats.self_citation_pct:.0f}%)")
+    return 0
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     """One-shot integrity check: layout + sanity + scan (+ optional verify)."""
     paper_dir = Path(args.paper_dir).resolve()
@@ -419,6 +446,30 @@ def cmd_check(args: argparse.Namespace) -> int:
             sanity_issues=issues, scan_result=scan_result, verify_results=verify_results))
         lines.append(f"  html:    {html_path}")
 
+    if args.json:
+        from .report import render_json_report
+        json_path = layout.literature_dir / "report.json"
+        json_path.write_text(render_json_report(
+            label, version=__version__, status=status, scan_date=_today(),
+            sanity_issues=issues, scan_result=scan_result, verify_results=verify_results))
+        lines.append(f"  json:    {json_path}")
+
+    if args.sarif:
+        from .report import render_sarif_report
+
+        def _rel(p: Path) -> str:
+            try:
+                return str(p.relative_to(layout.paper_dir))
+            except ValueError:
+                return p.name
+
+        sarif_path = layout.literature_dir / "report.sarif"
+        sarif_path.write_text(render_sarif_report(
+            version=__version__, bib_uri=_rel(layout.bib),
+            section_uris={p.name: _rel(p) for p in layout.section_files},
+            sanity_issues=issues, scan_result=scan_result, verify_results=verify_results))
+        lines.append(f"  sarif:   {sarif_path}")
+
     print("results:")
     for ln in lines:
         print(ln)
@@ -500,6 +551,15 @@ def build_parser() -> argparse.ArgumentParser:
                      help="ignore cached verify results and re-query APIs")
     pfx.set_defaults(func=cmd_fix)
 
+    prs = sub.add_parser("refstats",
+                         help="reference-balance stats (recency, median age, self-citation)")
+    prs.add_argument("paper_dir")
+    prs.add_argument("--bib", help=_BIB_HELP)
+    prs.add_argument("--author", action="append", metavar="SURNAME",
+                     help="your surname (repeatable) to compute self-citation share")
+    prs.add_argument("--out", help="output path (default: paper_dir/literature/reference_stats.md)")
+    prs.set_defaults(func=cmd_refstats)
+
     pn = sub.add_parser("sanity-stats", help="bib hygiene report (cited vs defined, dupes, missing fields)")
     pn.add_argument("paper_dir")
     pn.add_argument("--bib", help=_BIB_HELP)
@@ -553,6 +613,10 @@ def build_parser() -> argparse.ArgumentParser:
                      help="also verify bib entries against arXiv/Semantic Scholar (network)")
     pck.add_argument("--html", action="store_true",
                      help="also write a self-contained literature/report.html")
+    pck.add_argument("--json", action="store_true",
+                     help="also write machine-readable literature/report.json")
+    pck.add_argument("--sarif", action="store_true",
+                     help="also write literature/report.sarif (GitHub code-scanning)")
     pck.add_argument("--no-s2", action="store_true",
                      help="with --verify: skip Semantic Scholar (arXiv only)")
     pck.add_argument("--refresh", action="store_true",
