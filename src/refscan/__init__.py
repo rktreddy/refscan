@@ -1,3 +1,3 @@
 """refscan — reference collection and plagiarism-scan tooling for research papers."""
 
-__version__ = "0.18.0"
+__version__ = "0.19.0"
