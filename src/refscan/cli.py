@@ -419,6 +419,30 @@ def cmd_check(args: argparse.Namespace) -> int:
             sanity_issues=issues, scan_result=scan_result, verify_results=verify_results))
         lines.append(f"  html:    {html_path}")
 
+    if args.json:
+        from .report import render_json_report
+        json_path = layout.literature_dir / "report.json"
+        json_path.write_text(render_json_report(
+            label, version=__version__, status=status, scan_date=_today(),
+            sanity_issues=issues, scan_result=scan_result, verify_results=verify_results))
+        lines.append(f"  json:    {json_path}")
+
+    if args.sarif:
+        from .report import render_sarif_report
+
+        def _rel(p: Path) -> str:
+            try:
+                return str(p.relative_to(layout.paper_dir))
+            except ValueError:
+                return p.name
+
+        sarif_path = layout.literature_dir / "report.sarif"
+        sarif_path.write_text(render_sarif_report(
+            version=__version__, bib_uri=_rel(layout.bib),
+            section_uris={p.name: _rel(p) for p in layout.section_files},
+            sanity_issues=issues, scan_result=scan_result, verify_results=verify_results))
+        lines.append(f"  sarif:   {sarif_path}")
+
     print("results:")
     for ln in lines:
         print(ln)
@@ -553,6 +577,10 @@ def build_parser() -> argparse.ArgumentParser:
                      help="also verify bib entries against arXiv/Semantic Scholar (network)")
     pck.add_argument("--html", action="store_true",
                      help="also write a self-contained literature/report.html")
+    pck.add_argument("--json", action="store_true",
+                     help="also write machine-readable literature/report.json")
+    pck.add_argument("--sarif", action="store_true",
+                     help="also write literature/report.sarif (GitHub code-scanning)")
     pck.add_argument("--no-s2", action="store_true",
                      help="with --verify: skip Semantic Scholar (arXiv only)")
     pck.add_argument("--refresh", action="store_true",

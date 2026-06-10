@@ -1,12 +1,20 @@
 """Tests for the combined HTML report renderer + `check --html`."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from refscan.cli import main
-from refscan.report import render_html_report
+from refscan.report import render_html_report, render_json_report, render_sarif_report
 from refscan.sanity import BibIssue
 from refscan.verify import APIResult, VerifyResult
+
+_SCAN = {
+    "findings": [{"score": 0.72, "run_len": 11, "bibkey": "doe2020",
+                  "section": "intro.tex", "shingle": "a b c",
+                  "paper_context": "your prose", "ref_context": "source prose"}],
+    "refs_indexed": ["doe2020"], "refs_failed": [],
+}
 
 
 def test_render_minimal_clean() -> None:
@@ -51,6 +59,57 @@ def test_render_flags_retracted_and_not_found() -> None:
     assert "Retracted papers cited (1)" in html
     assert "Not found (1)" in html
     assert "ghost" in html
+
+
+def test_json_report_structure() -> None:
+    issues = [BibIssue("error", "undefined-cite", "ghost", "ghost not defined")]
+    vr = [VerifyResult(key="bad", bib_title="Bad", bib_first_author="X", bib_year="2015",
+                       bib_pdf_present=False, verdict="not-found")]
+    doc = json.loads(render_json_report("p", version="0.17.0", status="FAIL",
+                                        sanity_issues=issues, scan_result=_SCAN,
+                                        verify_results=vr))
+    assert doc["tool"] == "refscan" and doc["status"] == "FAIL"
+    assert doc["sanity"]["errors"] == 1
+    assert doc["scan"]["findings"] == 1 and doc["scan"]["top_score"] == 0.72
+    assert doc["verify"]["not_found"] == 1
+    assert doc["scan"] is not None and doc["verify"]["items"][0]["key"] == "bad"
+
+
+def test_json_report_null_sections_when_absent() -> None:
+    doc = json.loads(render_json_report("p"))  # no scan, no verify
+    assert doc["scan"] is None and doc["verify"] is None
+
+
+def test_sarif_report_valid_2_1_0() -> None:
+    issues = [BibIssue("error", "undefined-cite", "ghost", "ghost not defined")]
+    vr = [VerifyResult(key="bad", bib_title="Bad", bib_first_author="X", bib_year="2015",
+                       bib_pdf_present=False, verdict="not-found")]
+    doc = json.loads(render_sarif_report(version="0.17.0", bib_uri="paper/references.bib",
+                                         section_uris={"intro.tex": "paper/sections/intro.tex"},
+                                         sanity_issues=issues, scan_result=_SCAN,
+                                         verify_results=vr))
+    assert doc["version"] == "2.1.0"
+    run = doc["runs"][0]
+    assert run["tool"]["driver"]["name"] == "refscan"
+    rule_ids = {r["ruleId"] for r in run["results"]}
+    assert "sanity/undefined-cite" in rule_ids
+    assert "scan/match" in rule_ids
+    assert "verify/not-found" in rule_ids
+    # scan finding located at the resolved section path
+    scan_res = next(r for r in run["results"] if r["ruleId"] == "scan/match")
+    uri = scan_res["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+    assert uri == "paper/sections/intro.tex"
+    assert all(r["level"] in ("error", "warning", "note") for r in run["results"])
+
+
+def test_cli_check_json_and_sarif_write_files(tmp_path: Path) -> None:
+    (tmp_path / "references.bib").write_text(
+        "@article{k, title={T}, author={A}, year={2020}}\n")
+    (tmp_path / "paper.tex").write_text(r"prose \cite{k}")
+    main(["check", str(tmp_path), "--json", "--sarif"])
+    rep = tmp_path / "literature"
+    assert json.loads((rep / "report.json").read_text())["tool"] == "refscan"
+    assert json.loads((rep / "report.sarif").read_text())["version"] == "2.1.0"
 
 
 def test_cli_check_html_writes_file(tmp_path: Path) -> None:
