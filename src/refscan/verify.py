@@ -55,6 +55,7 @@ class APIResult:
     title_overlap: float = 0.0
     author_match: bool = False
     year_diff: int | None = None
+    retracted: bool = False   # OpenAlex is_retracted on this candidate
 
 
 @dataclass
@@ -69,6 +70,7 @@ class VerifyResult:
     skip_reason: str = ""
     best_match: APIResult | None = None
     other_matches: list[APIResult] = field(default_factory=list)
+    retracted: bool = False   # a confident match is flagged retracted by OpenAlex
 
 
 def _word_set(text: str) -> set[str]:
@@ -113,6 +115,7 @@ def _score_candidate(entry: BibEntry, candidate: dict, source: str) -> APIResult
         doi=candidate.get("doi", ""),
         title_overlap=overlap,
         author_match=a_match,
+        retracted=bool(candidate.get("retracted", False)),
         year_diff=year_diff,
     )
 
@@ -224,6 +227,7 @@ def _deserialize_result(d: dict) -> VerifyResult:
         skip_reason=d.get("skip_reason", ""),
         best_match=APIResult(**bm) if bm else None,
         other_matches=[APIResult(**x) for x in om],
+        retracted=d.get("retracted", False),
     )
 
 
@@ -300,11 +304,17 @@ def verify_paper(paper_dir: Path, use_s2: bool = True, refresh: bool = False,
             )
         else:
             verdict = _verdict_from(best)
+            # Flag retraction when a *confident* match is marked retracted by
+            # OpenAlex (orthogonal to the verdict — a retracted paper still exists).
+            retracted = any(
+                c is not None and c.retracted
+                and c.title_overlap >= VERIFIED_TITLE_OVERLAP
+                for c in [best, *others])
             r = VerifyResult(
                 key=entry.key, bib_title=entry.title,
                 bib_first_author=entry.first_author, bib_year=entry.year,
                 bib_pdf_present=pdf_present, verdict=verdict,
-                best_match=best, other_matches=others,
+                best_match=best, other_matches=others, retracted=retracted,
             )
         results.append(r)
         # Don't cache transient API failures — leave them to retry on re-run.
@@ -393,6 +403,20 @@ def render_verification_md(paper_label: str, results: list[VerifyResult],
                    f"https://www.semanticscholar.org/product/api and set "
                    f"`export {S2_API_KEY_ENV}=<your-key>`, then re-run with `--refresh`.\n\n")
 
+
+    retracted = [r for r in results if r.retracted]
+    if retracted:
+        out.append(f"## 🚨 Retracted papers ({len(retracted)})\n\n")
+        out.append("**You are citing papers that OpenAlex marks as retracted.** "
+                   "Retracted work should not be cited as valid evidence — review "
+                   "each, and remove or replace it (or cite it explicitly as retracted). "
+                   "Confirm at https://retractionwatch.com or via the journal.\n\n")
+        out.append("| Key | Bib title | Best-match DOI |\n|-----|-----------|----------------|\n")
+        for r in retracted:
+            doi = r.best_match.doi if r.best_match else ""
+            link = f"[{doi}](https://doi.org/{doi})" if doi else "—"
+            out.append(f"| `{r.key}` | {r.bib_title[:70]} | {link} |\n")
+        out.append("\n")
 
     out.append("## Summary\n\n| Verdict | Count |\n|---|---|\n")
     for v in _VERDICT_ORDER:
