@@ -16,7 +16,7 @@ Stdlib-only at runtime (uses `pdftotext` from poppler for PDF text extraction).
 
 One CLI, eleven subcommands (details in [Commands](#commands)):
 
-- **`check`** — ⭐ one-shot: run sanity + scan (+ optional verify) and print a **PASS / WARN / FAIL** verdict
+- **`check`** — ⭐ one-shot: run sanity + scan (+ optional verify) and print a **PASS / WARN / FAIL** verdict; `--html` writes a shareable report
 - **`init`** — scaffold `literature/` + a `refscan.json` template
 - **`fetch`** — download cited PDFs from arXiv, Semantic Scholar, OpenAlex + Unpaywall (parallel)
 - **`track`** — categorize references (downloaded / fetchable / pre-arXiv / skip / verify-exists)
@@ -106,8 +106,8 @@ Configurable keys (all optional, all relative to the paper dir):
 
 ## Commands
 
-### `refscan check <paper_dir> [--verify] [--bib P] [--sections P]`
-One-shot integrity check — the recommended entry point. Prints the resolved layout, runs **`sanity-stats`** and **`scan`** (and **`verify`** with `--verify`, which uses the network), writes the individual reports, and ends with a single **PASS / WARN / FAIL** verdict. Exits non-zero on **FAIL** (a bib error or a fabricated reference), so it drops straight into CI or a pre-commit hook.
+### `refscan check <paper_dir> [--verify] [--html] [--bib P] [--sections P]`
+One-shot integrity check — the recommended entry point. Prints the resolved layout, runs **`sanity-stats`** and **`scan`** (and **`verify`** with `--verify`, which uses the network), writes the individual reports, and ends with a single **PASS / WARN / FAIL** verdict. Exits non-zero on **FAIL** (a bib error, a fabricated reference, or a retracted one), so it drops straight into CI or a pre-commit hook. Add **`--html`** to also write a self-contained `literature/report.html` — one shareable file combining the verdict, color-coded scan findings (with side-by-side paper-vs-source context), bib hygiene, and any retracted/not-found references.
 
 ```
 refscan check: my-paper
@@ -257,7 +257,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-176 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, tracking/config, layout resolution + auto-detection, the `check` verdict, cross-paper overlap, and the release flow. Lint with `ruff check`.
+181 tests covering bib parsing and path-safety, text processing, shingle/scan logic, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML report, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 ## Versioning & changelog
 

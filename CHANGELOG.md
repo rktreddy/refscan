@@ -5,6 +5,16 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] — 2026-06-09
+
+### Added
+- **`refscan check --html`** — writes a single self-contained
+  `literature/report.html` combining the PASS/WARN/FAIL verdict, summary cards,
+  color-coded scan findings with side-by-side paper-vs-source context, a
+  bib-hygiene table, and retracted/not-found banners. Inline CSS, HTML-escaped,
+  no external assets — shareable with co-authors or attachable to a submission.
+  New `report.py` (`render_html_report`).
+
 ## [0.14.0] — 2026-06-09
 
 ### Added
