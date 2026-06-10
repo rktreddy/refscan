@@ -10,7 +10,7 @@ Use cases:
 - **Tracking a long bibliography:** auto-categorize references by status (downloaded / fetchable / pre-arXiv / skip) in a per-paper markdown tracker, with optional per-paper heuristics for books, software, and suspect titles.
 - **Checking for self-plagiarism across a research program:** given multiple paper directories, detect overlapping passages.
 
-Stdlib-only at runtime (uses `pdftotext` from poppler for PDF text extraction). The one optional extra, `refscan[semantic]`, adds paraphrase detection — everything else needs no Python dependencies.
+Stdlib-only at runtime (uses `pdftotext` from poppler for PDF text extraction). Optional extras add paraphrase detection — `refscan[semantic-lite]` (NumPy only, no torch) or `refscan[semantic]` (sentence-transformers); everything else needs no Python dependencies.
 
 ## Capabilities
 
@@ -22,7 +22,7 @@ One CLI, thirteen subcommands (details in [Commands](#commands)):
 - **`fetch`** — download cited PDFs from arXiv, Semantic Scholar, OpenAlex + Unpaywall (parallel)
 - **`track`** — categorize references (downloaded / fetchable / pre-arXiv / skip / verify-exists)
 - **`scan`** — shingle-match prose against references, ranked by a confidence score
-- **`semscan`** — semantic / near-duplicate scan (paraphrase detection); optional `refscan[semantic]` extra
+- **`semscan`** — semantic / near-duplicate scan (paraphrase detection); optional extra (`semantic-lite` or `semantic`)
 - **`verify`** — flag likely-fabricated, metadata-drifted, or **retracted** bib entries against arXiv, S2, OpenAlex + Crossref (all fields)
 - **`fix`** — auto-apply safe metadata corrections from verify matches (add DOIs, fix drifted years); preview by default
 - **`sanity-stats`** — bib hygiene report (undefined cites, dupes, missing fields, …), CI-friendly exit code
@@ -164,16 +164,17 @@ Bib hygiene report. Surfaces undefined cites, unused entries, duplicate keys, du
 ### `refscan refstats <paper_dir> [--author SURNAME ...] [--out PATH]`
 Reference-balance stats — the *presentation* signals reviewers complain about (distinct from integrity). Reports recency (% of references within the last 5 / 10 years, median year, range), an optional **self-citation share** when you pass your surname(s) via `--author`, and a by-year histogram. Bib-only, no network. Output: `literature/reference_stats.md`.
 
-### `refscan semscan <paper_dir> [--threshold T] [--min-words N] [--model NAME] [--out PATH]`
+### `refscan semscan <paper_dir> [--backend B] [--threshold T] [--min-words N] [--model NAME] [--out PATH]`
 Semantic / **near-duplicate** scan — catches *paraphrase* the exact-shingle `scan` misses (same meaning, different words). Compares sentence embeddings between your prose and each reference and flags pairs above a cosine threshold (default 0.75). Output: `literature/semantic_findings.md`.
 
-Needs the optional extra (heavy — pulls `sentence-transformers`/torch); the base package stays dependency-free:
+Needs one of two optional backends; the base package stays dependency-free:
 
 ```bash
-pip install 'refscan[semantic]'      # or: uv tool install --editable . --with sentence-transformers
+pip install 'refscan[semantic-lite]'   # light: model2vec — NumPy only, no torch (~100 MB), fast
+pip install 'refscan[semantic]'        # full:  sentence-transformers — torch (~2 GB), best fidelity
 ```
 
-The first run downloads a small model (`all-MiniLM-L6-v2` by default). It's slower than `scan` — best as a final pre-submission pass. Without the extra installed, the command exits with an install hint.
+`semscan` auto-detects whichever is installed (prefers the higher-fidelity one if both); override with `--backend model2vec|sentence-transformers`. The first run downloads a small model. It's slower than `scan` — best as a final pre-submission pass. Without a backend installed, the command exits with an install hint.
 
 ### `refscan verify <paper_dir> [--no-s2] [--refresh] [--out PATH]`
 Check each bib entry against arXiv, Semantic Scholar, OpenAlex, and Crossref — together they index preprints, journals, conference proceedings, and books across all fields, so a real non-arXiv paper (Nature, IEEE, ACM, biomed, humanities) is far less likely to be falsely flagged. It also **flags retracted papers** (via OpenAlex's retraction data) in a dedicated 🚨 section — citing retracted work is as serious as a fabricated citation, and `check --verify` treats it as a FAIL. Each entry gets a verdict: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (the lookup itself failed — *not* treated as fabricated). Output: `literature/verification_report.md`. Results are cached at `literature/verify_cache.json` and keyed by bib key plus title/author/year, so correcting an entry and re-running picks up the change without `--refresh`; `api-error` results are never cached.

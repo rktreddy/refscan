@@ -5,6 +5,19 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] — 2026-06-10
+
+### Added
+- **Lightweight semantic backend.** `refscan semscan` now supports two
+  embedding backends behind separate extras: **`refscan[semantic-lite]`**
+  (model2vec — NumPy only, **no torch**, ~100 MB, fast) and the existing
+  **`refscan[semantic]`** (sentence-transformers — torch, best fidelity).
+  `semscan` auto-detects whichever is installed (preferring higher fidelity if
+  both); a `--backend model2vec|sentence-transformers` flag overrides, and
+  `--model` defaults to the chosen backend's standard model. Makes paraphrase
+  detection usable without a multi-GB install. `semantic.available_backends()`
+  added; `get_embedder()` now takes `(backend, model)`.
+
 ## [0.19.0] — 2026-06-10
 
 ### Added

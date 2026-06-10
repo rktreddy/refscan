@@ -342,8 +342,10 @@ def cmd_semscan(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 1
     if not semantic.available():
-        print("error: semantic scan needs extra deps — install with: "
-              "pip install 'refscan[semantic]'", file=sys.stderr)
+        print("error: semantic scan needs a backend — `pip install "
+              "'refscan[semantic-lite]'` (light: model2vec, no torch) or "
+              "`pip install 'refscan[semantic]'` (full: sentence-transformers)",
+              file=sys.stderr)
         return 1
 
     paper_units: list[tuple[str, str]] = []
@@ -360,9 +362,15 @@ def cmd_semscan(args: argparse.Namespace) -> int:
         print("nothing to compare (no sentences extracted from paper or references)")
         return 0
 
+    try:
+        embed = semantic.get_embedder(backend=args.backend, model=args.model)
+    except ImportError as ex:
+        print(f"error: {ex}", file=sys.stderr)
+        return 1
+    chosen = args.backend if args.backend not in (None, "auto") \
+        else semantic.available_backends()[0]
     print(f"embedding {len(paper_units)} paper + {len(ref_units)} reference "
-          f"sentences (first run downloads the model)...", flush=True)
-    embed = semantic.get_embedder(args.model)
+          f"sentences with {chosen} (first run downloads the model)...", flush=True)
     findings = semantic.semantic_findings(paper_units, ref_units, embed,
                                           threshold=args.threshold)
     report = semantic.render_semantic_md(_paper_label(paper_dir), findings,
@@ -588,8 +596,11 @@ def build_parser() -> argparse.ArgumentParser:
                      help="cosine similarity threshold to report (default: 0.75)")
     pss.add_argument("--min-words", type=int, default=6,
                      help="ignore sentences shorter than this many words (default: 6)")
-    pss.add_argument("--model", default="all-MiniLM-L6-v2",
-                     help="sentence-transformers model name (default: all-MiniLM-L6-v2)")
+    pss.add_argument("--backend", choices=["auto", "model2vec", "sentence-transformers"],
+                     default="auto",
+                     help="embedding backend (default: auto — best installed)")
+    pss.add_argument("--model", default=None,
+                     help="model name (default: the backend's standard model)")
     pss.add_argument("--out", help="output path (default: paper_dir/literature/semantic_findings.md)")
     pss.set_defaults(func=cmd_semscan)
 

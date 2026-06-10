@@ -14,8 +14,9 @@ dependencies = []  # stdlib only; pdftotext (poppler) is a runtime system dep
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.1"]
-# Optional: enables `refscan semscan` (paraphrase detection). Heavy — pulls torch.
-semantic = ["sentence-transformers>=2.2"]
+# Optional backends for `refscan semscan` (paraphrase detection):
+semantic-lite = ["model2vec>=0.3", "numpy"]   # light — NumPy only, no torch (~100 MB)
+semantic = ["sentence-transformers>=2.2"]      # full — torch (~2 GB), best fidelity
 
 [project.scripts]
 refscan = "refscan.cli:main"

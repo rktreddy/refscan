@@ -4,10 +4,14 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import pytest
+
 from refscan import semantic
 from refscan.cli import main
 from refscan.semantic import (
     available,
+    available_backends,
+    get_embedder,
     render_semantic_md,
     semantic_findings,
     split_sentences,
@@ -35,6 +39,22 @@ def _bow(texts):
 
 def test_available_returns_bool() -> None:
     assert isinstance(available(), bool)
+
+
+def test_available_backends_subset() -> None:
+    bks = available_backends()
+    assert isinstance(bks, list)
+    assert set(bks) <= {"model2vec", "sentence-transformers"}
+    assert available() == bool(bks)
+
+
+def test_get_embedder_raises_when_backend_absent(monkeypatch) -> None:
+    # No backend installed (or force it) -> helpful ImportError, not a crash.
+    monkeypatch.setattr(semantic, "available_backends", lambda: [])
+    with pytest.raises(ImportError, match="semantic-lite|semantic"):
+        get_embedder()
+    with pytest.raises(ImportError, match="not installed"):
+        get_embedder(backend="model2vec")
 
 
 def test_split_sentences_min_words() -> None:
