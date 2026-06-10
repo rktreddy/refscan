@@ -1,0 +1,28 @@
+# refscan pre-commit hooks. In your paper repo's .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/rktreddy/refscan
+#       rev: v0.16.0
+#       hooks:
+#         - id: refscan-sanity      # fast, offline; fails on bib errors
+#         # - id: refscan-check     # also runs the plagiarism scan (needs pdftotext)
+#
+# Both default to the repo root as the paper dir; override with `args: ["path/to/paper"]`.
+
+- id: refscan-sanity
+  name: refscan bib sanity
+  description: Bib hygiene — undefined cites, dupes, missing fields (offline; exits non-zero on errors)
+  entry: refscan sanity-stats
+  language: python
+  args: ["."]
+  pass_filenames: false
+  files: \.(bib|tex)$
+
+- id: refscan-check
+  name: refscan integrity check
+  description: One-shot sanity + plagiarism scan with a PASS/WARN/FAIL verdict
+  entry: refscan check
+  language: python
+  args: ["."]
+  pass_filenames: false
+  files: \.(bib|tex)$

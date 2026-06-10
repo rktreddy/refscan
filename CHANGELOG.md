@@ -5,6 +5,18 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] — 2026-06-09
+
+### Added
+- **Colorized terminal output** — the `check` verdict (green/amber/red), and
+  sanity error/warning counts and retracted lines are colored when stdout is a
+  TTY. Respects `NO_COLOR` and a `FORCE_COLOR` override; plain when piped. New
+  `color.py`.
+- **`.pre-commit-hooks.yaml`** — `refscan-sanity` (offline) and `refscan-check`
+  hooks so authors can gate their paper repo via pre-commit.
+- **`action.yml`** — a composite GitHub Action that installs refscan and runs
+  `refscan check` on a paper directory in CI.
+
 ## [0.15.0] — 2026-06-09
 
 ### Added

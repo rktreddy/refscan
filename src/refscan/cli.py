@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .bib import parse_bib, ref_pdf_path
+from .color import bold, green, red, yellow
 from .fetch import fetch_paper, was_rate_limited
 from .layout import resolve_layout
 from .overlap import detect_overlap, render_overlap_md
@@ -169,7 +170,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     print(f"\nwrote {out_path}")
     n_retracted = sum(1 for r in results if r.retracted)
     if n_retracted:
-        print(f"  🚨 retracted: {n_retracted}  (see report)")
+        print(red(f"  🚨 retracted: {n_retracted}  (see report)"))
     for v in ("not-found", "weak-match", "metadata-drift", "verified", "skipped", "api-error"):
         if v in counts:
             print(f"  {v}: {counts[v]}")
@@ -189,8 +190,10 @@ def cmd_sanity(args: argparse.Namespace) -> int:
     out_path.write_text(report)
     counts = summarize(issues)
     print(f"wrote {out_path}")
+    err_s = red(str(counts["error"])) if counts["error"] else "0"
+    warn_s = yellow(str(counts["warning"])) if counts["warning"] else "0"
     print(f"  entries: {n_entries}  |  cited: {n_cited}")
-    print(f"  errors: {counts['error']}  |  warnings: {counts['warning']}  |  info: {counts['info']}")
+    print(f"  errors: {err_s}  |  warnings: {warn_s}  |  info: {counts['info']}")
     return 1 if counts["error"] > 0 else 0
 
 
@@ -420,7 +423,8 @@ def cmd_check(args: argparse.Namespace) -> int:
     for ln in lines:
         print(ln)
     icon = {"PASS": "✅", "WARN": "⚠️", "FAIL": "❌"}[status]
-    print(f"\n{icon} {status}    reports in {layout.literature_dir}/")
+    color_fn = {"PASS": green, "WARN": yellow, "FAIL": red}[status]
+    print(f"\n{icon} {color_fn(bold(status))}    reports in {layout.literature_dir}/")
     return 1 if status == "FAIL" else 0
 
 
