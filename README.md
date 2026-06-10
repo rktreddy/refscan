@@ -43,14 +43,14 @@ Cross-cutting:
 **Recommended (uv tool — works from any directory regardless of active venv):**
 
 ```bash
-git clone <your-remote>/refscan
+git clone https://github.com/rktreddy/refscan
 uv tool install --editable refscan
 ```
 
 **Alternative (pip — installs into current Python env):**
 
 ```bash
-git clone <your-remote>/refscan
+git clone https://github.com/rktreddy/refscan
 pip install -e refscan
 ```
 
@@ -167,11 +167,16 @@ Reference-balance stats — the *presentation* signals reviewers complain about 
 ### `refscan semscan <paper_dir> [--backend B] [--threshold T] [--min-words N] [--model NAME] [--out PATH]`
 Semantic / **near-duplicate** scan — catches *paraphrase* the exact-shingle `scan` misses (same meaning, different words). Compares sentence embeddings between your prose and each reference and flags pairs above a cosine threshold (default 0.75). Output: `literature/semantic_findings.md`.
 
-Needs one of two optional backends; the base package stays dependency-free:
+Needs one of two optional backends; the base package stays dependency-free. Add one to your existing install (refscan isn't on PyPI, so install from the cloned repo):
 
 ```bash
-pip install 'refscan[semantic-lite]'   # light: model2vec — NumPy only, no torch (~100 MB), fast
-pip install 'refscan[semantic]'        # full:  sentence-transformers — torch (~2 GB), best fidelity
+# light backend — model2vec (NumPy only, no torch, ~100 MB):
+uv tool install --editable refscan --with model2vec     # if you installed via uv tool
+pip install -e 'refscan[semantic-lite]'                 # if you installed via pip -e
+
+# full backend — sentence-transformers (torch, ~2 GB, best fidelity):
+uv tool install --editable refscan --with sentence-transformers
+pip install -e 'refscan[semantic]'
 ```
 
 **Choosing / switching the backend.** It's one command with a `--backend` flag — not two commands. `semscan` auto-detects whichever backend is installed (preferring the higher-fidelity `sentence-transformers` if both are present); a backend only works if its package is installed.
@@ -322,7 +327,7 @@ Keep your bibliography honest automatically.
 ```yaml
 repos:
   - repo: https://github.com/rktreddy/refscan
-    rev: v0.16.0
+    rev: v0.21.0
     hooks:
       - id: refscan-sanity        # fast, offline; blocks a commit on bib errors
       # - id: refscan-check       # also runs the plagiarism scan (needs pdftotext)
@@ -331,7 +336,7 @@ repos:
 **GitHub Actions** — refscan ships a composite action; in your paper repo's workflow:
 
 ```yaml
-- uses: rktreddy/refscan@v0.16.0
+- uses: rktreddy/refscan@v0.21.0
   with:
     paper-dir: .
     extra-args: "--verify"        # optional: also check refs against arXiv/S2/OpenAlex/Crossref
