@@ -1,0 +1,33 @@
+name: "refscan"
+description: "Run refscan integrity checks (bib hygiene + plagiarism scan, optional reference verification) on a paper directory"
+branding:
+  icon: "check-circle"
+  color: "blue"
+
+inputs:
+  paper-dir:
+    description: "Path to the paper directory to check"
+    required: false
+    default: "."
+  extra-args:
+    description: "Extra args passed to `refscan check` (e.g. '--verify --html')"
+    required: false
+    default: ""
+  ref:
+    description: "refscan git ref to install (tag/branch/SHA)"
+    required: false
+    default: "main"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+    - name: Install poppler (pdftotext)
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y poppler-utils
+    - name: refscan check
+      shell: bash
+      run: >
+        uvx --from "git+https://github.com/rktreddy/refscan@${{ inputs.ref }}"
+        refscan check "${{ inputs.paper-dir }}" ${{ inputs.extra-args }}
