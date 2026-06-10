@@ -325,6 +325,56 @@ def cmd_fix(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_semscan(args: argparse.Namespace) -> int:
+    """Semantic / near-duplicate scan (paraphrase detection; optional extra)."""
+    from . import semantic
+    from .scan import extract_pdf_text
+    from .textproc import strip_latex
+
+    paper_dir = Path(args.paper_dir).resolve()
+    layout = resolve_layout(paper_dir, bib=args.bib, sections=args.sections)
+    _note_autodetect(layout)
+    if not layout.section_files:
+        print("error: no section .tex files found", file=sys.stderr)
+        return 1
+    if not layout.refs_dir.is_dir():
+        print(f"error: no refs dir at {layout.refs_dir} (run `refscan fetch` first)",
+              file=sys.stderr)
+        return 1
+    if not semantic.available():
+        print("error: semantic scan needs extra deps — install with: "
+              "pip install 'refscan[semantic]'", file=sys.stderr)
+        return 1
+
+    paper_units: list[tuple[str, str]] = []
+    for sec in layout.section_files:
+        prose = strip_latex(sec.read_text(errors="ignore"))
+        for s in semantic.split_sentences(prose, args.min_words):
+            paper_units.append((sec.name, s))
+    ref_units: list[tuple[str, str]] = []
+    for pdf in sorted(layout.refs_dir.glob("*.pdf")):
+        text = extract_pdf_text(pdf, layout.cache_dir)
+        for s in semantic.split_sentences(text, args.min_words):
+            ref_units.append((pdf.stem, s))
+    if not paper_units or not ref_units:
+        print("nothing to compare (no sentences extracted from paper or references)")
+        return 0
+
+    print(f"embedding {len(paper_units)} paper + {len(ref_units)} reference "
+          f"sentences (first run downloads the model)...", flush=True)
+    embed = semantic.get_embedder(args.model)
+    findings = semantic.semantic_findings(paper_units, ref_units, embed,
+                                          threshold=args.threshold)
+    report = semantic.render_semantic_md(_paper_label(paper_dir), findings,
+                                         threshold=args.threshold, scan_date=_today())
+    out_path = Path(args.out) if args.out else layout.literature_dir / "semantic_findings.md"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(report)
+    print(f"wrote {out_path}")
+    print(f"  paraphrase findings (cosine ≥ {args.threshold}): {len(findings)}")
+    return 0
+
+
 def cmd_refstats(args: argparse.Namespace) -> int:
     """Reference-balance stats: recency, age, optional self-citation."""
     from .refstats import compute_refstats, render_refstats_md
@@ -526,6 +576,22 @@ def build_parser() -> argparse.ArgumentParser:
                     help="disable generic-phrase filter (show raw matches)")
     ps.add_argument("--out", help="output path (default: paper_dir/literature/plagiarism_findings.md)")
     ps.set_defaults(func=cmd_scan)
+
+    pss = sub.add_parser(
+        "semscan",
+        help="semantic/near-duplicate scan — paraphrase detection (needs `refscan[semantic]`)",
+    )
+    pss.add_argument("paper_dir")
+    pss.add_argument("--bib", help=_BIB_HELP)
+    pss.add_argument("--sections", help=_SECTIONS_HELP)
+    pss.add_argument("--threshold", type=float, default=0.75,
+                     help="cosine similarity threshold to report (default: 0.75)")
+    pss.add_argument("--min-words", type=int, default=6,
+                     help="ignore sentences shorter than this many words (default: 6)")
+    pss.add_argument("--model", default="all-MiniLM-L6-v2",
+                     help="sentence-transformers model name (default: all-MiniLM-L6-v2)")
+    pss.add_argument("--out", help="output path (default: paper_dir/literature/semantic_findings.md)")
+    pss.set_defaults(func=cmd_semscan)
 
     pv = sub.add_parser("verify", help="check bib entries against arXiv + Semantic Scholar")
     pv.add_argument("paper_dir")
