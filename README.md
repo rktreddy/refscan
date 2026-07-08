@@ -14,12 +14,13 @@ Stdlib-only at runtime (uses `pdftotext` from poppler for PDF text extraction). 
 
 ## Capabilities
 
-One CLI, thirteen subcommands (details in [Commands](#commands)):
+One CLI, fourteen subcommands (details in [Commands](#commands)):
 
 - **`check`** — ⭐ one-shot: run sanity + scan (+ optional verify) and print a **PASS / WARN / FAIL** verdict; `--html`/`--json`/`--sarif` write shareable / machine-readable reports
 - **`refstats`** — reference-balance stats (recency, median age, self-citation share)
 - **`init`** — scaffold `literature/` + a `refscan.json` template
 - **`fetch`** — download cited PDFs from arXiv, Semantic Scholar, OpenAlex + Unpaywall (parallel)
+- **`cite`** — generate a clean BibTeX entry from a DOI or arXiv ID; `--add` appends it to your bib (dedupe-aware)
 - **`track`** — categorize references (downloaded / fetchable / pre-arXiv / skip / verify-exists)
 - **`scan`** — shingle-match prose against references, ranked by a confidence score
 - **`semscan`** — semantic / near-duplicate scan (paraphrase detection); optional extra (`semantic-lite` or `semantic`)
@@ -36,7 +37,7 @@ Cross-cutting:
 - **Per-paper heuristics** — book/software/suspect-title markers in `refscan.json`
 - **Robust extraction** — mtime-cached `pdftotext`, letter-spacing repair, generic-phrase filtering
 - **Safe & polite** — bib-key path-traversal protection, arXiv/S2 rate-limit etiquette (optional `REFSCAN_S2_API_KEY`)
-- **Stdlib-only runtime**, Python 3.10+, 130 tests, CI on 3.10–3.13
+- **Stdlib-only runtime**, Python 3.10+, 240 tests, CI on 3.10–3.13
 
 ## Install
 
@@ -130,6 +131,14 @@ Scaffold `literature/refs/`, `literature/pdf_text_cache/`, write an initial `ref
 
 ### `refscan fetch <paper_dir> [--no-s2] [--workers N]`
 Parse `paper/references.bib`. For each entry, resolve a PDF in order: explicit arXiv ID in the bib → arXiv title/author search → Semantic Scholar (unless `--no-s2`) → OpenAlex open-access PDF → Unpaywall (when the entry has a DOI). Download PDFs into `literature/refs/{BIBKEY}.pdf`. Downloads are validated as real PDFs (`%PDF` header), so open-access landing-page HTML is never saved as a `.pdf`. On an interactive terminal you get a live progress bar; piped/CI output stays line-per-entry. URL resolution is sequential and rate-limited per arXiv/S2 guidelines; downloads run in parallel via a thread pool (default 5 workers, set `--workers 1` for fully sequential). Bib keys that contain path separators or `..` traversal components are reported as `unsafe-key` and skipped, so a reference file can never write outside `literature/refs/`.
+
+### `refscan cite <ID> [<ID> ...] [--add] [--paper-dir DIR] [--bib P]`
+Generate a clean BibTeX entry from a DOI or arXiv ID and print it to stdout. Accepts bare DOIs (`10.1038/s41586-020-2649-2`), `doi.org` URLs, bare arXiv IDs (`1706.03762`, version suffixes stripped), `arXiv:` prefixes, and `arxiv.org/abs|pdf` URLs. DOIs resolve via Crossref with an OpenAlex fallback; arXiv IDs via the arXiv API. Entry type is inferred from the metadata (`@article` / `@inproceedings` / `@misc` with `eprint`/`archivePrefix` for arXiv-only work), and citation keys follow `surname` + `year` + first significant title word (`vaswani2017attention`), suffixed `a`, `b`, … on collision. With `--add` the new entries are appended to the bib resolved from `--paper-dir` (default `.`); if the DOI or arXiv ID is already in the bib, the existing key is printed and nothing is appended. Exit codes: 0 = resolved (or already present), 1 = not found / unrecognized identifier, 2 = source unreachable.
+
+```bash
+refscan cite 10.1038/s41586-020-2649-2            # print an entry
+refscan cite arXiv:1706.03762 --add --paper-dir . # append to this paper's bib
+```
 
 ### `refscan track <paper_dir>`
 Regenerate `literature/reference_tracking.md` based on what's currently in `literature/refs/`. Each entry is bucketed as downloaded / fetchable / pre-arXiv / skip-book / skip-software / verify-exists.
@@ -316,7 +325,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-214 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
+240 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), cite (identifier parsing, key generation, BibTeX formatting, dedupe), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 Terminal output is colorized when stdout is a TTY; it stays plain when piped or when `NO_COLOR` is set (and you can force it with `FORCE_COLOR=1`).
 
