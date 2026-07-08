@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+from refscan import cli
 from refscan.cite import (
     cite_identifiers,
     classify_identifier,
@@ -144,3 +145,21 @@ def test_cite_add_dedupes_by_doi(tmp_path: Path, capsys) -> None:
     assert rc == 0
     assert "already in bib as 'numpy2020'" in capsys.readouterr().out
     assert "harris2020array" not in bib.read_text()
+
+
+def test_cli_cite_dispatch(capsys) -> None:
+    with patch("refscan.cite.resolve_identifier", return_value=_META_JOURNAL):
+        rc = cli.main(["cite", "10.1038/s41586-020-2649-2"])
+    assert rc == 0
+    assert "@article{harris2020array," in capsys.readouterr().out
+
+
+def test_cli_cite_add_uses_layout(tmp_path: Path, capsys) -> None:
+    (tmp_path / "paper").mkdir()
+    bib = tmp_path / "paper" / "references.bib"
+    bib.write_text("")
+    with patch("refscan.cite.resolve_identifier", return_value=_META_JOURNAL):
+        rc = cli.main(["cite", "10.1038/s41586-020-2649-2", "--add",
+                       "--paper-dir", str(tmp_path)])
+    assert rc == 0
+    assert "@article{harris2020array," in bib.read_text()
