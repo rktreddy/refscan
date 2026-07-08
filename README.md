@@ -14,22 +14,15 @@ Stdlib-only at runtime (uses `pdftotext` from poppler for PDF text extraction). 
 
 ## Capabilities
 
-One CLI, fourteen subcommands (details in [Commands](#commands)):
+One CLI, fourteen subcommands (full reference in [Commands](#commands)). The highlights:
 
-- **`check`** — ⭐ one-shot: run sanity + scan (+ optional verify) and print a **PASS / WARN / FAIL** verdict; `--html`/`--json`/`--sarif` write shareable / machine-readable reports
-- **`refstats`** — reference-balance stats (recency, median age, self-citation share)
-- **`init`** — scaffold `literature/` + a `refscan.json` template
-- **`fetch`** — download cited PDFs from arXiv, Semantic Scholar, OpenAlex + Unpaywall (parallel)
+- **`check`** — ⭐ one-shot pre-submission pass: bib sanity + plagiarism scan (+ optional verify) → a single **PASS / WARN / FAIL** verdict; `--html`/`--json`/`--sarif` write shareable or CI-native reports
+- **`verify`** — flag likely-**fabricated**, metadata-drifted, or **retracted** references against arXiv, Semantic Scholar, OpenAlex + Crossref (all fields)
+- **`scan`** / **`semscan`** — match your prose against the papers you cite: exact shingle matching (confidence-ranked) plus semantic paraphrase detection
 - **`cite`** — generate a clean BibTeX entry from a DOI or arXiv ID; `--add` appends it to your bib (dedupe-aware)
-- **`track`** — categorize references (downloaded / fetchable / pre-arXiv / skip / verify-exists)
-- **`scan`** — shingle-match prose against references, ranked by a confidence score
-- **`semscan`** — semantic / near-duplicate scan (paraphrase detection); optional extra (`semantic-lite` or `semantic`)
-- **`verify`** — flag likely-fabricated, metadata-drifted, or **retracted** bib entries against arXiv, S2, OpenAlex + Crossref (all fields)
-- **`fix`** — auto-apply safe metadata corrections from verify matches (add DOIs, fix drifted years); preview by default
-- **`sanity-stats`** — bib hygiene report (undefined cites, dupes, missing fields, …), CI-friendly exit code
-- **`watch`** — re-scan on `.tex` save while drafting
-- **`overlap`** — cross-paper self-plagiarism check
-- **`release`** — maintainer-only version bump / test / tag / push
+- **`fix`** — auto-apply the safe corrections `verify` implies (missing DOIs, drifted years); preview by default
+
+Plus the supporting commands: **`fetch`** (download cited PDFs), **`init`**, **`track`**, **`sanity-stats`**, **`refstats`**, **`watch`**, **`overlap`**, and the maintainer-only **`release`**.
 
 Cross-cutting:
 
@@ -110,7 +103,7 @@ Configurable keys (all optional, all relative to the paper dir):
 ## Commands
 
 ### `refscan check <paper_dir> [--verify] [--html] [--bib P] [--sections P]`
-One-shot integrity check — the recommended entry point. Prints the resolved layout, runs **`sanity-stats`** and **`scan`** (and **`verify`** with `--verify`, which uses the network), writes the individual reports, and ends with a single **PASS / WARN / FAIL** verdict. Exits non-zero on **FAIL** (a bib error, a fabricated reference, or a retracted one), so it drops straight into CI or a pre-commit hook. Add **`--html`** to also write a self-contained `literature/report.html` — one shareable file combining the verdict, color-coded scan findings (with side-by-side paper-vs-source context), bib hygiene, and any retracted/not-found references. **`--json`** writes a machine-readable `report.json`; **`--sarif`** writes `report.sarif` (SARIF 2.1.0) so a GitHub workflow can upload it and show **inline PR annotations** on fabricated/retracted references and scan matches.
+One-shot integrity check — the recommended entry point. Runs **`sanity-stats`** and **`scan`** (and **`verify`** with `--verify`; uses the network), writes the individual reports, and ends with a single **PASS / WARN / FAIL** verdict. Exits non-zero on **FAIL** (a bib error, a fabricated reference, or a retracted one), so it drops straight into CI or a pre-commit hook. **`--html`** writes a self-contained, shareable `literature/report.html` combining verdict, color-coded findings, and side-by-side paper-vs-source context; **`--json`** writes a machine-readable `report.json`; **`--sarif`** writes SARIF 2.1.0 for **inline GitHub PR annotations**.
 
 ```
 refscan check: my-paper
@@ -130,10 +123,10 @@ results:
 Scaffold `literature/refs/`, `literature/pdf_text_cache/`, write an initial `reference_tracking.md`, and (if absent) a `refscan.json` config template.
 
 ### `refscan fetch <paper_dir> [--no-s2] [--workers N]`
-Parse `paper/references.bib`. For each entry, resolve a PDF in order: explicit arXiv ID in the bib → arXiv title/author search → Semantic Scholar (unless `--no-s2`) → OpenAlex open-access PDF → Unpaywall (when the entry has a DOI). Download PDFs into `literature/refs/{BIBKEY}.pdf`. Downloads are validated as real PDFs (`%PDF` header), so open-access landing-page HTML is never saved as a `.pdf`. On an interactive terminal you get a live progress bar; piped/CI output stays line-per-entry. URL resolution is sequential and rate-limited per arXiv/S2 guidelines; downloads run in parallel via a thread pool (default 5 workers, set `--workers 1` for fully sequential). Bib keys that contain path separators or `..` traversal components are reported as `unsafe-key` and skipped, so a reference file can never write outside `literature/refs/`.
+Resolve and download a PDF for each bib entry into `literature/refs/{BIBKEY}.pdf`, trying in order: explicit arXiv ID → arXiv title/author search → Semantic Scholar (unless `--no-s2`) → OpenAlex → Unpaywall (when the entry has a DOI). Downloads are validated as real PDFs (landing-page HTML is never saved), resolution is rate-limited per API guidelines, and downloads run in parallel (`--workers`, default 5). Interactive terminals get a live progress bar; piped/CI output stays line-per-entry. Bib keys with path separators or `..` are skipped as `unsafe-key`, so a reference can never write outside `literature/refs/`.
 
 ### `refscan cite <ID> [<ID> ...] [--add] [--paper-dir DIR] [--bib P]`
-Generate a clean BibTeX entry from a DOI or arXiv ID and print it to stdout. Accepts bare DOIs (`10.1038/s41586-020-2649-2`), `doi.org` URLs, bare arXiv IDs (`1706.03762`, version suffixes stripped), `arXiv:` prefixes, and `arxiv.org/abs|pdf` URLs. DOIs resolve via Crossref with an OpenAlex fallback; arXiv IDs via the arXiv API. Entry type is inferred from the metadata (`@article` / `@inproceedings` / `@misc` with `eprint`/`archivePrefix` for arXiv-only work), and citation keys follow `surname` + `year` + first significant title word (`vaswani2017attention`), suffixed `a`, `b`, … on collision. With `--add` the new entries are appended to the bib resolved from `--paper-dir` (default `.`); if the DOI or arXiv ID is already in the bib, the existing key is printed and nothing is appended. Exit codes: 0 = resolved (or already present), 1 = not found / unrecognized identifier, 2 = source unreachable.
+Generate a clean BibTeX entry from a DOI or arXiv ID and print it to stdout. Accepts bare DOIs, `doi.org` URLs, and arXiv IDs in any common form (`1706.03762`, `arXiv:` prefix, abs/pdf URLs; version suffixes stripped). DOIs resolve via Crossref with an OpenAlex fallback; arXiv IDs via the arXiv API. Entry type is inferred (`@article` / `@inproceedings` / `@misc` + `eprint` for arXiv-only work) and citation keys follow the `vaswani2017attention` pattern with collision suffixes. With `--add`, new entries are appended to the bib resolved from `--paper-dir` (default `.`); an identifier already in the bib prints its existing key instead of duplicating it. Exit codes: 0 = resolved (or already present), 1 = not found / unrecognized, 2 = source unreachable.
 
 ```bash
 refscan cite 10.1038/s41586-020-2649-2            # print an entry
@@ -202,23 +195,14 @@ The first run downloads a small model. `semscan` is slower than `scan`, so it's 
 > **model2vec is the recommended backend** — lighter, no torch, and works everywhere. The `sentence-transformers` backend needs a recent PyTorch (≥ 2.4); on **Intel macOS** PyTorch is capped at 2.2.2, so use model2vec there.
 
 ### `refscan verify <paper_dir> [--no-s2] [--refresh] [--out PATH]`
-Check each bib entry against arXiv, Semantic Scholar, OpenAlex, and Crossref — together they index preprints, journals, conference proceedings, and books across all fields, so a real non-arXiv paper (Nature, IEEE, ACM, biomed, humanities) is far less likely to be falsely flagged. It also **flags retracted papers** (via OpenAlex's retraction data) in a dedicated 🚨 section — citing retracted work is as serious as a fabricated citation, and `check --verify` treats it as a FAIL. Each entry gets a verdict: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (the lookup itself failed — *not* treated as fabricated). Output: `literature/verification_report.md`. Results are cached at `literature/verify_cache.json` and keyed by bib key plus title/author/year, so correcting an entry and re-running picks up the change without `--refresh`; `api-error` results are never cached.
+Check each bib entry against arXiv, Semantic Scholar, OpenAlex, and Crossref — together they cover preprints, journals, proceedings, and books across all fields, so real non-arXiv papers are rarely false-flagged. **Retracted papers** (via OpenAlex) get a dedicated 🚨 section, and `check --verify` treats them as a FAIL. Verdicts per entry: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (lookup failed — *not* treated as fabricated). Output: `literature/verification_report.md`. Results are cached keyed by title/author/year, so a corrected entry re-checks automatically without `--refresh`; `api-error` results are never cached.
 
-**API keys & etiquette:** OpenAlex and Crossref need no key. refscan ships **no default contact email** (it never sends anyone else's address), so set your own to use the polite pools — and to enable **Unpaywall**, which requires an email and is otherwise skipped:
+**API keys & etiquette:** none required — OpenAlex + Crossref work anonymously and keep `verify`/`fetch` working across fields. Two optional env vars improve coverage: a contact email joins the polite pools and enables **Unpaywall** (refscan ships **no default email** and skips Unpaywall without one), and a free [Semantic Scholar key](https://www.semanticscholar.org/product/api) avoids S2's aggressive unauthenticated throttling:
 
 ```bash
 export REFSCAN_CONTACT_EMAIL=you@example.com
-```
-
-Without it, OpenAlex/Crossref still work (anonymous common pool) and Unpaywall is skipped; the other fetch sources are unaffected.
-
-**Semantic Scholar rate limits:** only S2's unauthenticated endpoint throttles aggressively (often after just a few requests). For best S2 coverage, get a free API key at https://www.semanticscholar.org/product/api and:
-
-```bash
 export REFSCAN_S2_API_KEY=<your-key>
 ```
-
-Even without an S2 key, OpenAlex + Crossref keep `verify`/`fetch` working across fields.
 
 ### `refscan fix <paper_dir> [--apply] [--no-s2] [--refresh]`
 Closes the loop on `verify`: applies the safe corrections that verify's matches imply. For each entry whose best match is **confident** (high title overlap), it **adds a missing DOI** and **corrects a drifted year** (only when the author also matches). Titles and author lists are never rewritten — too easy to clobber a correct entry with an API variant.
