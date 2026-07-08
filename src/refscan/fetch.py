@@ -229,6 +229,62 @@ def arxiv_search_metadata(title: str, author: str = "",
     return out
 
 
+def arxiv_lookup_by_id(arxiv_id: str,
+                       user_agent: str = DEFAULT_USER_AGENT) -> dict | None:
+    """Look up a single arXiv paper by ID (``id_list`` query).
+
+    Returns a metadata dict (``title``, ``authors``, ``year``, ``arxiv_id``,
+    ``doi``, ``venue`` from journal_ref, ``container_type`` (always ""),
+    ``primary_class``), ``{}`` if the ID does not exist, or ``None`` if the
+    request failed — so callers can distinguish not-found from api-error.
+    """
+    params = urllib.parse.urlencode({"id_list": arxiv_id, "max_results": 1})
+    data, _ = _http_get(f"{ARXIV_API}?{params}", user_agent, timeout=20)
+    if not data:
+        return None
+    try:
+        tree = ET.fromstring(data.decode("utf-8"))
+    except ET.ParseError:
+        return None
+    ns = {"atom": "http://www.w3.org/2005/Atom",
+          "arxiv": "http://arxiv.org/schemas/atom"}
+    entry = tree.find("atom:entry", ns)
+    if entry is None:
+        return {}
+    title_el = entry.find("atom:title", ns)
+    id_el = entry.find("atom:id", ns)
+    if title_el is None or id_el is None or not title_el.text:
+        return {}
+    title = re.sub(r"\s+", " ", title_el.text).strip()
+    if title == "Error":  # arXiv reports malformed/unknown IDs this way
+        return {}
+    authors = []
+    for ae in entry.findall("atom:author", ns):
+        name_el = ae.find("atom:name", ns)
+        if name_el is not None and name_el.text:
+            authors.append(name_el.text.strip())
+    year = ""
+    published_el = entry.find("atom:published", ns)
+    if published_el is not None and published_el.text:
+        ym = re.match(r"(\d{4})", published_el.text)
+        if ym:
+            year = ym.group(1)
+    idm = re.search(r"abs/(\d{4}\.\d{4,5}|[a-zA-Z\-.]+/\d{7})", id_el.text.strip())
+    doi_el = entry.find("arxiv:doi", ns)
+    jref_el = entry.find("arxiv:journal_ref", ns)
+    cat_el = entry.find("arxiv:primary_category", ns)
+    return {
+        "title": title,
+        "authors": authors,
+        "year": year,
+        "arxiv_id": idm.group(1) if idm else arxiv_id,
+        "doi": (doi_el.text.strip() if doi_el is not None and doi_el.text else ""),
+        "venue": (jref_el.text.strip() if jref_el is not None and jref_el.text else ""),
+        "container_type": "",
+        "primary_class": (cat_el.get("term", "") if cat_el is not None else ""),
+    }
+
+
 def semantic_scholar_search_metadata(title: str, author: str = "",
                                       user_agent: str = DEFAULT_USER_AGENT,
                                       limit: int = 5) -> list[dict] | None:

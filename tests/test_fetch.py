@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from refscan.bib import BibEntry
 from refscan.fetch import (
+    arxiv_lookup_by_id,
     crossref_search_metadata,
     download_pdf,
     fetch_paper,
@@ -273,3 +274,43 @@ def test_fetch_paper_runs_downloads_in_parallel(tmp_path: Path) -> None:
     assert len(results) == 4
     assert all(r["status"] == "downloaded" for r in results)
     assert all((refs / f"{e.key}.pdf").exists() for e in entries)
+
+
+_ARXIV_ID_ATOM = b"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/1706.03762v7</id>
+    <title>Attention Is All You Need</title>
+    <published>2017-06-12T17:57:34Z</published>
+    <author><name>Ashish Vaswani</name></author>
+    <author><name>Noam Shazeer</name></author>
+    <arxiv:doi>10.48550/arXiv.1706.03762</arxiv:doi>
+    <arxiv:journal_ref>NeurIPS 2017</arxiv:journal_ref>
+    <arxiv:primary_category term="cs.CL"/>
+  </entry>
+</feed>"""
+
+_ARXIV_EMPTY_FEED = (b'<?xml version="1.0" encoding="UTF-8"?>'
+                     b'<feed xmlns="http://www.w3.org/2005/Atom"></feed>')
+
+
+def test_arxiv_lookup_by_id_success() -> None:
+    with patch("refscan.fetch._http_get", return_value=(_ARXIV_ID_ATOM, 200)):
+        meta = arxiv_lookup_by_id("1706.03762")
+    assert meta["title"] == "Attention Is All You Need"
+    assert meta["authors"] == ["Ashish Vaswani", "Noam Shazeer"]
+    assert meta["year"] == "2017"
+    assert meta["arxiv_id"] == "1706.03762"
+    assert meta["doi"] == "10.48550/arXiv.1706.03762"
+    assert meta["venue"] == "NeurIPS 2017"
+    assert meta["primary_class"] == "cs.CL"
+
+
+def test_arxiv_lookup_by_id_not_found() -> None:
+    with patch("refscan.fetch._http_get", return_value=(_ARXIV_EMPTY_FEED, 200)):
+        assert arxiv_lookup_by_id("9999.99999") == {}
+
+
+def test_arxiv_lookup_by_id_request_failure() -> None:
+    with patch("refscan.fetch._http_get", return_value=(None, None)):
+        assert arxiv_lookup_by_id("1706.03762") is None
