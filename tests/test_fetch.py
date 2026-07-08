@@ -12,6 +12,7 @@ from unittest.mock import patch
 from refscan.bib import BibEntry
 from refscan.fetch import (
     arxiv_lookup_by_id,
+    crossref_lookup_by_doi,
     crossref_search_metadata,
     download_pdf,
     fetch_paper,
@@ -314,3 +315,59 @@ def test_arxiv_lookup_by_id_not_found() -> None:
 def test_arxiv_lookup_by_id_request_failure() -> None:
     with patch("refscan.fetch._http_get", return_value=(None, None)):
         assert arxiv_lookup_by_id("1706.03762") is None
+
+
+_CR_WORK = json.dumps({"message": {
+    "title": ["Deep Residual Learning for Image Recognition"],
+    "author": [{"given": "Kaiming", "family": "He"},
+               {"given": "Xiangyu", "family": "Zhang"}],
+    "issued": {"date-parts": [[2016]]},
+    "type": "proceedings-article",
+    "container-title": ["2016 IEEE CVPR"],
+    "volume": "", "issue": "", "page": "770-778",
+    "publisher": "IEEE",
+    "DOI": "10.1109/cvpr.2016.90",
+}}).encode()
+
+_OA_WORK = json.dumps({
+    "title": "Deep Residual Learning for Image Recognition",
+    "authorships": [{"author": {"display_name": "Kaiming He"}}],
+    "publication_year": 2016,
+    "doi": "https://doi.org/10.1109/cvpr.2016.90",
+    "type": "article",
+    "primary_location": {"source": {"display_name": "CVPR"}},
+    "biblio": {"volume": "", "issue": "", "first_page": "770", "last_page": "778"},
+}).encode()
+
+
+def test_crossref_lookup_by_doi_success() -> None:
+    with patch("refscan.fetch._http_get", return_value=(_CR_WORK, 200)):
+        meta = crossref_lookup_by_doi("10.1109/cvpr.2016.90")
+    assert meta["title"].startswith("Deep Residual")
+    assert meta["authors"] == ["Kaiming He", "Xiangyu Zhang"]
+    assert meta["year"] == "2016"
+    assert meta["container_type"] == "proceedings"
+    assert meta["venue"] == "2016 IEEE CVPR"
+    assert meta["pages"] == "770-778"
+    assert meta["doi"] == "10.1109/cvpr.2016.90"
+
+
+def test_crossref_lookup_falls_back_to_openalex() -> None:
+    responses = [(None, 404), (_OA_WORK, 200)]  # Crossref 404 -> OpenAlex hit
+    with patch("refscan.fetch._http_get", side_effect=responses):
+        meta = crossref_lookup_by_doi("10.1109/cvpr.2016.90")
+    assert meta["authors"] == ["Kaiming He"]
+    assert meta["venue"] == "CVPR"
+    assert meta["container_type"] == "journal"
+    assert meta["pages"] == "770--778"
+    assert meta["doi"] == "10.1109/cvpr.2016.90"
+
+
+def test_crossref_lookup_not_found_both() -> None:
+    with patch("refscan.fetch._http_get", side_effect=[(None, 404), (None, 404)]):
+        assert crossref_lookup_by_doi("10.9999/nope") == {}
+
+
+def test_crossref_lookup_request_failure() -> None:
+    with patch("refscan.fetch._http_get", side_effect=[(None, None), (None, None)]):
+        assert crossref_lookup_by_doi("10.1109/cvpr.2016.90") is None

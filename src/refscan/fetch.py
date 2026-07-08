@@ -451,6 +451,100 @@ def crossref_search_metadata(title: str, author: str = "",
     return out
 
 
+def _crossref_item_to_meta(it: dict) -> dict:
+    """Convert a Crossref work item to the shared metadata dict shape."""
+    titles = it.get("title") or []
+    authors = []
+    for a in it.get("author", []) or []:
+        name = f"{a.get('given', '')} {a.get('family', '')}".strip()
+        if name:
+            authors.append(name)
+    year = ""
+    for key in ("issued", "published", "published-print", "published-online", "created"):
+        dp = (it.get(key) or {}).get("date-parts") or []
+        if dp and dp[0] and dp[0][0]:
+            year = str(dp[0][0])
+            break
+    cr_type = it.get("type", "")
+    container_type = ""
+    if cr_type == "journal-article":
+        container_type = "journal"
+    elif cr_type == "proceedings-article":
+        container_type = "proceedings"
+    containers = it.get("container-title") or []
+    return {
+        "title": titles[0] if titles else "",
+        "authors": authors,
+        "year": year,
+        "arxiv_id": "",
+        "doi": it.get("DOI", "") or "",
+        "venue": containers[0] if containers else "",
+        "container_type": container_type,
+        "volume": it.get("volume", "") or "",
+        "number": it.get("issue", "") or "",
+        "pages": it.get("page", "") or "",
+        "publisher": it.get("publisher", "") or "",
+    }
+
+
+def _openalex_work_to_meta(w: dict) -> dict:
+    """Convert an OpenAlex work to the shared metadata dict shape."""
+    authors = [(a.get("author") or {}).get("display_name", "")
+               for a in w.get("authorships", []) or []]
+    authors = [a for a in authors if a]
+    doi = re.sub(r"^https?://doi\.org/", "", w.get("doi") or "", flags=re.IGNORECASE)
+    source = (w.get("primary_location") or {}).get("source") or {}
+    venue = source.get("display_name", "") or ""
+    container_type = "journal" if (w.get("type") == "article" and venue) else ""
+    biblio = w.get("biblio") or {}
+    pages = biblio.get("first_page") or ""
+    if pages and biblio.get("last_page"):
+        pages += "--" + biblio["last_page"]
+    return {
+        "title": w.get("title") or "",
+        "authors": authors,
+        "year": str(w.get("publication_year") or ""),
+        "arxiv_id": "",
+        "doi": doi,
+        "venue": venue,
+        "container_type": container_type,
+        "volume": biblio.get("volume") or "",
+        "number": biblio.get("issue") or "",
+        "pages": pages,
+        "publisher": "",
+    }
+
+
+def crossref_lookup_by_doi(doi: str,
+                           user_agent: str = DEFAULT_USER_AGENT) -> dict | None:
+    """Look up one work by DOI: Crossref first, OpenAlex fallback.
+
+    Returns a metadata dict on success, ``{}`` when a registry affirmatively
+    reports the DOI as unknown (HTTP 404), or ``None`` when the requests
+    failed (network/API error) — the api-error vs not-found distinction used
+    throughout ``fetch``.
+    """
+    quoted = urllib.parse.quote(doi, safe="")
+    qs = urllib.parse.urlencode(_polite({}))
+    url = f"{CROSSREF_API}/{quoted}" + (f"?{qs}" if qs else "")
+    data, status = _http_get(url, user_agent, timeout=30)
+    if data:
+        try:
+            return _crossref_item_to_meta(json.loads(data.decode("utf-8")).get("message", {}))
+        except json.JSONDecodeError:
+            pass
+    oa_url = f"{OPENALEX_API}/doi:{quoted}" + (f"?{qs}" if qs else "")
+    data2, status2 = _http_get(oa_url, user_agent, timeout=30)
+    if data2:
+        try:
+            return _openalex_work_to_meta(json.loads(data2.decode("utf-8")))
+        except json.JSONDecodeError:
+            pass
+    if status == 404 or status2 == 404:
+        return {}
+    return None
+
+
 def unpaywall_pdf_url(doi: str, user_agent: str = DEFAULT_USER_AGENT) -> str | None:
     """Given a DOI, return the best open-access PDF URL via Unpaywall, else None.
 
