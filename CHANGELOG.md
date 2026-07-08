@@ -5,6 +5,19 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] — 2026-07-08
+
+### Added
+- **`refscan doctor [paper_dir] [--no-network]`** — environment self-check:
+  Python version, `pdftotext`, which semantic backend `semscan` would use
+  (detects installed-but-broken backends without loading models), metadata-
+  source reachability, optional env vars, and — with a `paper_dir` — layout
+  resolution (bib / sections / reference PDFs). Colorized ✓/⚠/✗ checklist;
+  exits 1 only on hard failures.
+- **`refscan release` now auto-bumps the README's version pins**
+  (`rev: vX.Y.Z` and `refscan@vX.Y.Z` in the pre-commit / GitHub Action
+  examples), so they can no longer go stale between releases.
+
 ## [0.22.0] — 2026-07-08
 
 ### Added
