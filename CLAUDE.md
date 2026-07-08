@@ -6,9 +6,10 @@ hygiene, and auto-fix. This file is the authoritative guidance for working in
 this repo; the larger `CLAUDE.md` files in parent directories are about a
 separate paper-writing system and do not apply here.
 
-## Commands (13 subcommands, dispatched in `cli.py`)
+## Commands (14 subcommands, dispatched in `cli.py`)
 - `init` — scaffold `literature/` + a `refscan.json` template
 - `fetch` — download cited PDFs (arXiv → S2 → OpenAlex → Unpaywall; TTY progress bar)
+- `cite` — BibTeX entry from DOI/arXiv ID (Crossref→OpenAlex; `--add` appends, dedupe-aware)
 - `track` — categorize references → `reference_tracking.md`
 - `scan` — exact shingle-match prose vs references (confidence-scored)
 - `semscan` — semantic/near-duplicate scan (optional backends; paraphrase)

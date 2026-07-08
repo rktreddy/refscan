@@ -409,6 +409,22 @@ def cmd_refstats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_cite(args: argparse.Namespace) -> int:
+    """Generate BibTeX entries from DOIs / arXiv IDs."""
+    from .cite import cite_identifiers
+
+    bib_path = None
+    if args.add:
+        paper_dir = Path(args.paper_dir).resolve()
+        layout = resolve_layout(paper_dir, bib=args.bib)
+        _note_autodetect(layout)
+        bib_path = layout.bib
+        if not bib_path.exists():
+            print(f"error: no references.bib at {bib_path}", file=sys.stderr)
+            return 1
+    return cite_identifiers(list(args.identifiers), bib_path=bib_path, add=args.add)
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     """One-shot integrity check: layout + sanity + scan (+ optional verify)."""
     paper_dir = Path(args.paper_dir).resolve()
@@ -702,6 +718,18 @@ def build_parser() -> argparse.ArgumentParser:
     pck.add_argument("--min-run", type=int, default=DEFAULT_MIN_RUN,
                      help=f"minimum run length in tokens (default: {DEFAULT_MIN_RUN})")
     pck.set_defaults(func=cmd_check)
+
+    pcite = sub.add_parser(
+        "cite", help="generate a BibTeX entry from a DOI or arXiv ID")
+    pcite.add_argument("identifiers", nargs="+", metavar="ID",
+                       help="DOI (10.xxxx/... or doi.org URL) or arXiv ID "
+                            "(2301.12345, arXiv:2301.12345, or abs URL)")
+    pcite.add_argument("--add", action="store_true",
+                       help="append new entries to the paper's references.bib")
+    pcite.add_argument("--paper-dir", default=".",
+                       help="paper directory for --add (default: .)")
+    pcite.add_argument("--bib", help=_BIB_HELP)
+    pcite.set_defaults(func=cmd_cite)
 
     return p
 

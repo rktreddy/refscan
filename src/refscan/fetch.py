@@ -229,6 +229,62 @@ def arxiv_search_metadata(title: str, author: str = "",
     return out
 
 
+def arxiv_lookup_by_id(arxiv_id: str,
+                       user_agent: str = DEFAULT_USER_AGENT) -> dict | None:
+    """Look up a single arXiv paper by ID (``id_list`` query).
+
+    Returns a metadata dict (``title``, ``authors``, ``year``, ``arxiv_id``,
+    ``doi``, ``venue`` from journal_ref, ``container_type`` (always ""),
+    ``primary_class``), ``{}`` if the ID does not exist, or ``None`` if the
+    request failed — so callers can distinguish not-found from api-error.
+    """
+    params = urllib.parse.urlencode({"id_list": arxiv_id, "max_results": 1})
+    data, _ = _http_get(f"{ARXIV_API}?{params}", user_agent, timeout=20)
+    if not data:
+        return None
+    try:
+        tree = ET.fromstring(data.decode("utf-8"))
+    except ET.ParseError:
+        return None
+    ns = {"atom": "http://www.w3.org/2005/Atom",
+          "arxiv": "http://arxiv.org/schemas/atom"}
+    entry = tree.find("atom:entry", ns)
+    if entry is None:
+        return {}
+    title_el = entry.find("atom:title", ns)
+    id_el = entry.find("atom:id", ns)
+    if title_el is None or id_el is None or not title_el.text:
+        return {}
+    title = re.sub(r"\s+", " ", title_el.text).strip()
+    if title == "Error":  # arXiv reports malformed/unknown IDs this way
+        return {}
+    authors = []
+    for ae in entry.findall("atom:author", ns):
+        name_el = ae.find("atom:name", ns)
+        if name_el is not None and name_el.text:
+            authors.append(name_el.text.strip())
+    year = ""
+    published_el = entry.find("atom:published", ns)
+    if published_el is not None and published_el.text:
+        ym = re.match(r"(\d{4})", published_el.text)
+        if ym:
+            year = ym.group(1)
+    idm = re.search(r"abs/(\d{4}\.\d{4,5}|[a-zA-Z\-.]+/\d{7})", id_el.text.strip())
+    doi_el = entry.find("arxiv:doi", ns)
+    jref_el = entry.find("arxiv:journal_ref", ns)
+    cat_el = entry.find("arxiv:primary_category", ns)
+    return {
+        "title": title,
+        "authors": authors,
+        "year": year,
+        "arxiv_id": idm.group(1) if idm else arxiv_id,
+        "doi": (doi_el.text.strip() if doi_el is not None and doi_el.text else ""),
+        "venue": (jref_el.text.strip() if jref_el is not None and jref_el.text else ""),
+        "container_type": "",
+        "primary_class": (cat_el.get("term", "") if cat_el is not None else ""),
+    }
+
+
 def semantic_scholar_search_metadata(title: str, author: str = "",
                                       user_agent: str = DEFAULT_USER_AGENT,
                                       limit: int = 5) -> list[dict] | None:
@@ -393,6 +449,100 @@ def crossref_search_metadata(title: str, author: str = "",
             "doi": it.get("DOI", "") or "",
         })
     return out
+
+
+def _crossref_item_to_meta(it: dict) -> dict:
+    """Convert a Crossref work item to the shared metadata dict shape."""
+    titles = it.get("title") or []
+    authors = []
+    for a in it.get("author", []) or []:
+        name = f"{a.get('given', '')} {a.get('family', '')}".strip()
+        if name:
+            authors.append(name)
+    year = ""
+    for key in ("issued", "published", "published-print", "published-online", "created"):
+        dp = (it.get(key) or {}).get("date-parts") or []
+        if dp and dp[0] and dp[0][0]:
+            year = str(dp[0][0])
+            break
+    cr_type = it.get("type", "")
+    container_type = ""
+    if cr_type == "journal-article":
+        container_type = "journal"
+    elif cr_type == "proceedings-article":
+        container_type = "proceedings"
+    containers = it.get("container-title") or []
+    return {
+        "title": titles[0] if titles else "",
+        "authors": authors,
+        "year": year,
+        "arxiv_id": "",
+        "doi": it.get("DOI", "") or "",
+        "venue": containers[0] if containers else "",
+        "container_type": container_type,
+        "volume": it.get("volume", "") or "",
+        "number": it.get("issue", "") or "",
+        "pages": it.get("page", "") or "",
+        "publisher": it.get("publisher", "") or "",
+    }
+
+
+def _openalex_work_to_meta(w: dict) -> dict:
+    """Convert an OpenAlex work to the shared metadata dict shape."""
+    authors = [(a.get("author") or {}).get("display_name", "")
+               for a in w.get("authorships", []) or []]
+    authors = [a for a in authors if a]
+    doi = re.sub(r"^https?://doi\.org/", "", w.get("doi") or "", flags=re.IGNORECASE)
+    source = (w.get("primary_location") or {}).get("source") or {}
+    venue = source.get("display_name", "") or ""
+    container_type = "journal" if (w.get("type") == "article" and venue) else ""
+    biblio = w.get("biblio") or {}
+    pages = biblio.get("first_page") or ""
+    if pages and biblio.get("last_page"):
+        pages += "--" + biblio["last_page"]
+    return {
+        "title": w.get("title") or "",
+        "authors": authors,
+        "year": str(w.get("publication_year") or ""),
+        "arxiv_id": "",
+        "doi": doi,
+        "venue": venue,
+        "container_type": container_type,
+        "volume": biblio.get("volume") or "",
+        "number": biblio.get("issue") or "",
+        "pages": pages,
+        "publisher": "",
+    }
+
+
+def crossref_lookup_by_doi(doi: str,
+                           user_agent: str = DEFAULT_USER_AGENT) -> dict | None:
+    """Look up one work by DOI: Crossref first, OpenAlex fallback.
+
+    Returns a metadata dict on success, ``{}`` when a registry affirmatively
+    reports the DOI as unknown (HTTP 404), or ``None`` when the requests
+    failed (network/API error) — the api-error vs not-found distinction used
+    throughout ``fetch``.
+    """
+    quoted = urllib.parse.quote(doi, safe="")
+    qs = urllib.parse.urlencode(_polite({}))
+    url = f"{CROSSREF_API}/{quoted}" + (f"?{qs}" if qs else "")
+    data, status = _http_get(url, user_agent, timeout=30)
+    if data:
+        try:
+            return _crossref_item_to_meta(json.loads(data.decode("utf-8")).get("message", {}))
+        except json.JSONDecodeError:
+            pass
+    oa_url = f"{OPENALEX_API}/doi:{quoted}" + (f"?{qs}" if qs else "")
+    data2, status2 = _http_get(oa_url, user_agent, timeout=30)
+    if data2:
+        try:
+            return _openalex_work_to_meta(json.loads(data2.decode("utf-8")))
+        except json.JSONDecodeError:
+            pass
+    if status == 404 or status2 == 404:
+        return {}
+    return None
 
 
 def unpaywall_pdf_url(doi: str, user_agent: str = DEFAULT_USER_AGENT) -> str | None:

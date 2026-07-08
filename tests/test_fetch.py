@@ -11,6 +11,8 @@ from unittest.mock import patch
 
 from refscan.bib import BibEntry
 from refscan.fetch import (
+    arxiv_lookup_by_id,
+    crossref_lookup_by_doi,
     crossref_search_metadata,
     download_pdf,
     fetch_paper,
@@ -273,3 +275,99 @@ def test_fetch_paper_runs_downloads_in_parallel(tmp_path: Path) -> None:
     assert len(results) == 4
     assert all(r["status"] == "downloaded" for r in results)
     assert all((refs / f"{e.key}.pdf").exists() for e in entries)
+
+
+_ARXIV_ID_ATOM = b"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/1706.03762v7</id>
+    <title>Attention Is All You Need</title>
+    <published>2017-06-12T17:57:34Z</published>
+    <author><name>Ashish Vaswani</name></author>
+    <author><name>Noam Shazeer</name></author>
+    <arxiv:doi>10.48550/arXiv.1706.03762</arxiv:doi>
+    <arxiv:journal_ref>NeurIPS 2017</arxiv:journal_ref>
+    <arxiv:primary_category term="cs.CL"/>
+  </entry>
+</feed>"""
+
+_ARXIV_EMPTY_FEED = (b'<?xml version="1.0" encoding="UTF-8"?>'
+                     b'<feed xmlns="http://www.w3.org/2005/Atom"></feed>')
+
+
+def test_arxiv_lookup_by_id_success() -> None:
+    with patch("refscan.fetch._http_get", return_value=(_ARXIV_ID_ATOM, 200)):
+        meta = arxiv_lookup_by_id("1706.03762")
+    assert meta["title"] == "Attention Is All You Need"
+    assert meta["authors"] == ["Ashish Vaswani", "Noam Shazeer"]
+    assert meta["year"] == "2017"
+    assert meta["arxiv_id"] == "1706.03762"
+    assert meta["doi"] == "10.48550/arXiv.1706.03762"
+    assert meta["venue"] == "NeurIPS 2017"
+    assert meta["primary_class"] == "cs.CL"
+
+
+def test_arxiv_lookup_by_id_not_found() -> None:
+    with patch("refscan.fetch._http_get", return_value=(_ARXIV_EMPTY_FEED, 200)):
+        assert arxiv_lookup_by_id("9999.99999") == {}
+
+
+def test_arxiv_lookup_by_id_request_failure() -> None:
+    with patch("refscan.fetch._http_get", return_value=(None, None)):
+        assert arxiv_lookup_by_id("1706.03762") is None
+
+
+_CR_WORK = json.dumps({"message": {
+    "title": ["Deep Residual Learning for Image Recognition"],
+    "author": [{"given": "Kaiming", "family": "He"},
+               {"given": "Xiangyu", "family": "Zhang"}],
+    "issued": {"date-parts": [[2016]]},
+    "type": "proceedings-article",
+    "container-title": ["2016 IEEE CVPR"],
+    "volume": "", "issue": "", "page": "770-778",
+    "publisher": "IEEE",
+    "DOI": "10.1109/cvpr.2016.90",
+}}).encode()
+
+_OA_WORK = json.dumps({
+    "title": "Deep Residual Learning for Image Recognition",
+    "authorships": [{"author": {"display_name": "Kaiming He"}}],
+    "publication_year": 2016,
+    "doi": "https://doi.org/10.1109/cvpr.2016.90",
+    "type": "article",
+    "primary_location": {"source": {"display_name": "CVPR"}},
+    "biblio": {"volume": "", "issue": "", "first_page": "770", "last_page": "778"},
+}).encode()
+
+
+def test_crossref_lookup_by_doi_success() -> None:
+    with patch("refscan.fetch._http_get", return_value=(_CR_WORK, 200)):
+        meta = crossref_lookup_by_doi("10.1109/cvpr.2016.90")
+    assert meta["title"].startswith("Deep Residual")
+    assert meta["authors"] == ["Kaiming He", "Xiangyu Zhang"]
+    assert meta["year"] == "2016"
+    assert meta["container_type"] == "proceedings"
+    assert meta["venue"] == "2016 IEEE CVPR"
+    assert meta["pages"] == "770-778"
+    assert meta["doi"] == "10.1109/cvpr.2016.90"
+
+
+def test_crossref_lookup_falls_back_to_openalex() -> None:
+    responses = [(None, 404), (_OA_WORK, 200)]  # Crossref 404 -> OpenAlex hit
+    with patch("refscan.fetch._http_get", side_effect=responses):
+        meta = crossref_lookup_by_doi("10.1109/cvpr.2016.90")
+    assert meta["authors"] == ["Kaiming He"]
+    assert meta["venue"] == "CVPR"
+    assert meta["container_type"] == "journal"
+    assert meta["pages"] == "770--778"
+    assert meta["doi"] == "10.1109/cvpr.2016.90"
+
+
+def test_crossref_lookup_not_found_both() -> None:
+    with patch("refscan.fetch._http_get", side_effect=[(None, 404), (None, 404)]):
+        assert crossref_lookup_by_doi("10.9999/nope") == {}
+
+
+def test_crossref_lookup_request_failure() -> None:
+    with patch("refscan.fetch._http_get", side_effect=[(None, None), (None, None)]):
+        assert crossref_lookup_by_doi("10.1109/cvpr.2016.90") is None

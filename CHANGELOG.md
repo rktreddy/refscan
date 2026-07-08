@@ -5,6 +5,22 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.0] — 2026-07-08
+
+### Added
+- **`refscan cite <doi|arxiv-id> [...] [--add]`** — generate a clean BibTeX
+  entry from a DOI or arXiv ID. DOIs resolve via Crossref with an OpenAlex
+  fallback; arXiv IDs via the arXiv API. Entry type is inferred
+  (`@article` / `@inproceedings` / `@misc` + `eprint` for arXiv-only work),
+  citation keys are `surname` + `year` + first significant title word with
+  collision suffixes. Prints to stdout; `--add` appends to the paper's
+  `references.bib` with dedupe by DOI / arXiv ID (an already-present entry
+  prints its existing key instead). Exit codes mirror `verify`'s
+  distinction: 1 = not found, 2 = source unreachable.
+- `fetch.arxiv_lookup_by_id()` and `fetch.crossref_lookup_by_doi()` —
+  ID-based metadata lookups following the shared source conventions
+  (`None` on request failure vs `{}` for not-found).
+
 ## [0.21.1] — 2026-06-10
 
 ### Fixed
