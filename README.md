@@ -52,6 +52,8 @@ Both are editable installs — code edits in `refscan/src/refscan/` take effect 
 
 Runtime dependency: `pdftotext` (poppler). On macOS: `brew install poppler`. On Debian/Ubuntu: `apt install poppler-utils`.
 
+Optional: semantic paraphrase detection (`semscan`) needs an extra embedding backend — install commands in the [`semscan` command section](#commands). Everything else runs on the dependency-free base install.
+
 ## Expected paper layout
 
 This is the **default** layout; it's configurable (see [Custom paper layouts](#custom-paper-layouts)).
