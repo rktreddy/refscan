@@ -425,6 +425,16 @@ def cmd_cite(args: argparse.Namespace) -> int:
     return cite_identifiers(list(args.identifiers), bib_path=bib_path, add=args.add)
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Diagnose the refscan environment."""
+    from .doctor import render, run_doctor
+
+    paper_dir = Path(args.paper_dir).resolve() if args.paper_dir else None
+    results, code = run_doctor(paper_dir=paper_dir, network=not args.no_network)
+    print(render(results))
+    return code
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     """One-shot integrity check: layout + sanity + scan (+ optional verify)."""
     paper_dir = Path(args.paper_dir).resolve()
@@ -730,6 +740,14 @@ def build_parser() -> argparse.ArgumentParser:
                        help="paper directory for --add (default: .)")
     pcite.add_argument("--bib", help=_BIB_HELP)
     pcite.set_defaults(func=cmd_cite)
+
+    pdoc = sub.add_parser(
+        "doctor", help="diagnose the refscan environment (deps, backends, network)")
+    pdoc.add_argument("paper_dir", nargs="?",
+                      help="also diagnose layout resolution for this paper")
+    pdoc.add_argument("--no-network", action="store_true",
+                      help="skip source reachability probes")
+    pdoc.set_defaults(func=cmd_doctor)
 
     return p
 

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from refscan.release import (
+    _bump_readme_pins,
     _bump_version,
     _changelog_has_version,
     _replace_version_in_file,
@@ -99,3 +100,40 @@ def test_replace_version_refuses_on_multiple_matches(tmp_path: Path) -> None:
     )
     # Two matches → refuse to edit (ambiguous)
     assert not ok
+
+
+_README_WITH_PINS = """# refscan
+
+Some prose mentioning v0.9.0 history that must not change.
+
+```yaml
+repos:
+  - repo: https://github.com/rktreddy/refscan
+    rev: v0.22.0            # use the latest release tag
+```
+
+```yaml
+- uses: rktreddy/refscan@v0.22.0  # use the latest release tag
+```
+"""
+
+
+def test_bump_readme_pins_updates_both(tmp_path: Path) -> None:
+    readme = tmp_path / "README.md"
+    readme.write_text(_README_WITH_PINS)
+    assert _bump_readme_pins(readme, "0.23.0") is True
+    text = readme.read_text()
+    assert "rev: v0.23.0" in text
+    assert "refscan@v0.23.0" in text
+    assert "v0.22.0" not in text
+    assert "v0.9.0 history" in text  # prose untouched
+
+
+def test_bump_readme_pins_idempotent(tmp_path: Path) -> None:
+    readme = tmp_path / "README.md"
+    readme.write_text(_README_WITH_PINS)
+    assert _bump_readme_pins(readme, "0.22.0") is False  # already current
+
+
+def test_bump_readme_pins_missing_file(tmp_path: Path) -> None:
+    assert _bump_readme_pins(tmp_path / "README.md", "0.23.0") is False

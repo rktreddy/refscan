@@ -112,6 +112,26 @@ def _replace_version_in_file(path: Path, current: str, new: str,
     return True
 
 
+_PIN_PATTERNS = (r"(rev:\s*)v\d+\.\d+\.\d+", r"(refscan@)v\d+\.\d+\.\d+")
+
+
+def _bump_readme_pins(readme: Path, new_version: str) -> bool:
+    """Point the README's pre-commit/action version pins at ``new_version``.
+
+    Matches ``rev: vX.Y.Z`` and ``refscan@vX.Y.Z`` (any old version); leaves
+    version strings in prose alone. Returns True when the file changed.
+    """
+    if not readme.exists():
+        return False
+    text = orig = readme.read_text()
+    for pat in _PIN_PATTERNS:
+        text = re.sub(pat, lambda m: m.group(1) + "v" + new_version, text)
+    if text == orig:
+        return False
+    readme.write_text(text)
+    return True
+
+
 def plan_release(kind: str, push: bool, run_tests: bool,
                  dry_run: bool) -> ReleasePlan:
     """Validate environment + compute next version. Raises on any blocker."""
@@ -146,7 +166,8 @@ def execute(plan: ReleasePlan) -> int:
         return 1
 
     # 2. Working-tree cleanliness (allow only the files we'll modify)
-    will_modify = {"pyproject.toml", "src/refscan/__init__.py", "CHANGELOG.md"}
+    will_modify = {"pyproject.toml", "src/refscan/__init__.py", "CHANGELOG.md",
+                   "README.md"}
     clean, dirty = _git_clean_except(sd, will_modify)
     if not clean:
         print("error: working tree has uncommitted changes outside the version files:",
@@ -183,7 +204,8 @@ def execute(plan: ReleasePlan) -> int:
         print("\n  [dry-run] would now:")
         print(f"    - update pyproject.toml: version → {plan.new_version}")
         print(f"    - update src/refscan/__init__.py: __version__ → {plan.new_version}")
-        print("    - git add pyproject.toml src/refscan/__init__.py")
+        print(f"    - update README.md version pins → v{plan.new_version} (if present)")
+        print("    - git add pyproject.toml src/refscan/__init__.py [README.md]")
         print(f"    - git commit -m \"v{plan.new_version}: ...\" (you'll be prompted to write the body)")
         print(f"    - git tag -a v{plan.new_version}")
         if plan.push:
@@ -204,9 +226,13 @@ def execute(plan: ReleasePlan) -> int:
         print(f"error: could not bump __version__ in {init}", file=sys.stderr)
         return 1
     print(f"  bumped pyproject.toml and __init__.py to {plan.new_version}")
+    to_add = ["pyproject.toml", "src/refscan/__init__.py"]
+    if _bump_readme_pins(sd / "README.md", plan.new_version):
+        print(f"  bumped README.md version pins to v{plan.new_version}")
+        to_add.append("README.md")
 
     # 6. Git add + commit + tag
-    _run(["git", "add", "pyproject.toml", "src/refscan/__init__.py"], sd)
+    _run(["git", "add", *to_add], sd)
     msg = f"v{plan.new_version}: release\n\nSee CHANGELOG.md for the full set of changes in this version."
     _run(["git", "commit", "-m", msg], sd)
     _run(["git", "tag", "-a", f"v{plan.new_version}", "-m", f"v{plan.new_version}"], sd)

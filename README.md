@@ -14,7 +14,7 @@ Stdlib-only at runtime (uses `pdftotext` from poppler for PDF text extraction). 
 
 ## Capabilities
 
-One CLI, fourteen subcommands (full reference in [Commands](#commands)). The highlights:
+One CLI, fifteen subcommands (full reference in [Commands](#commands)). The highlights:
 
 - **`check`** — ⭐ one-shot pre-submission pass: bib sanity + plagiarism scan (+ optional verify) → a single **PASS / WARN / FAIL** verdict; `--html`/`--json`/`--sarif` write shareable or CI-native reports
 - **`verify`** — flag likely-**fabricated**, metadata-drifted, or **retracted** references against arXiv, Semantic Scholar, OpenAlex + Crossref (all fields)
@@ -22,7 +22,7 @@ One CLI, fourteen subcommands (full reference in [Commands](#commands)). The hig
 - **`cite`** — generate a clean BibTeX entry from a DOI or arXiv ID; `--add` appends it to your bib (dedupe-aware)
 - **`fix`** — auto-apply the safe corrections `verify` implies (missing DOIs, drifted years); preview by default
 
-Plus the supporting commands: **`fetch`** (download cited PDFs), **`init`**, **`track`**, **`sanity-stats`**, **`refstats`**, **`watch`**, **`overlap`**, and the maintainer-only **`release`**.
+Plus the supporting commands: **`fetch`** (download cited PDFs), **`doctor`** (environment self-check), **`init`**, **`track`**, **`sanity-stats`**, **`refstats`**, **`watch`**, **`overlap`**, and the maintainer-only **`release`**.
 
 Cross-cutting:
 
@@ -30,7 +30,7 @@ Cross-cutting:
 - **Per-paper heuristics** — book/software/suspect-title markers in `refscan.json`
 - **Robust extraction** — mtime-cached `pdftotext`, letter-spacing repair, generic-phrase filtering
 - **Safe & polite** — bib-key path-traversal protection, arXiv/S2 rate-limit etiquette (optional `REFSCAN_S2_API_KEY`)
-- **Stdlib-only runtime**, Python 3.10+, 240 tests, CI on 3.10–3.13
+- **Stdlib-only runtime**, Python 3.10+, 262 tests, CI on 3.10–3.13
 
 ## Install
 
@@ -135,6 +135,19 @@ refscan cite 10.1038/s41586-020-2649-2            # print an entry
 refscan cite arXiv:1706.03762 --add --paper-dir . # append to this paper's bib
 ```
 
+### `refscan doctor [paper_dir] [--no-network]`
+Environment self-check — run it after installing, or when something doesn't work. Verifies Python version, `pdftotext`, which semantic backend `semscan` would use (including the broken-install case), reachability of the four metadata sources (skip with `--no-network`), and whether the optional env vars are set. Pass a `paper_dir` to also diagnose layout resolution (bib / sections / reference PDFs) for that paper. Exits 1 if anything fails outright; warnings (optional features, offline) don't fail. Fast and side-effect-free — it never downloads models.
+
+```
+  ✓ python                Python 3.11.5
+  ✓ pdftotext             pdftotext version 26.03.0
+  ✓ semantic backends     semscan will use model2vec
+  ⚠ REFSCAN_CONTACT_EMAIL not set
+  ✓ arXiv reachable       https://export.arxiv.org/api/query
+  ...
+7 ok, 3 warning(s), 0 failure(s)
+```
+
 ### `refscan track <paper_dir>`
 Regenerate `literature/reference_tracking.md` based on what's currently in `literature/refs/`. Each entry is bucketed as downloaded / fetchable / pre-arXiv / skip-book / skip-software / verify-exists.
 
@@ -220,7 +233,7 @@ proposed fixes (2):
 ```
 
 ### `refscan release {patch|minor|major|X.Y.Z} [--push] [--no-test] [--dry-run]` (maintainer-only)
-For shipping new versions of refscan itself. Validates environment, runs tests, bumps version in `pyproject.toml` and `__init__.py` in lockstep, commits, tags `v{new_version}`, and (with `--push`) pushes to `origin`. Requires editable install + clean working tree on `main` + a CHANGELOG section pre-written for the new version. Use `--dry-run` to preview.
+For shipping new versions of refscan itself. Validates environment, runs tests, bumps version in `pyproject.toml` and `__init__.py` in lockstep (plus this README's pre-commit/action version pins), commits, tags `v{new_version}`, and (with `--push`) pushes to `origin`. Requires editable install + clean working tree on `main` + a CHANGELOG section pre-written for the new version. Use `--dry-run` to preview.
 
 ## User guide — a pre-submission pass
 
@@ -311,7 +324,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-240 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), cite (identifier parsing, key generation, BibTeX formatting, dedupe), verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
+262 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), cite (identifier parsing, key generation, BibTeX formatting, dedupe), the doctor environment checks, verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 Terminal output is colorized when stdout is a TTY; it stays plain when piped or when `NO_COLOR` is set (and you can force it with `FORCE_COLOR=1`).
 
