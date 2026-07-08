@@ -1,7 +1,15 @@
 """Tests for refscan.cite."""
 from __future__ import annotations
 
-from refscan.cite import classify_identifier, format_entry, make_key
+from pathlib import Path
+from unittest.mock import patch
+
+from refscan.cite import (
+    cite_identifiers,
+    classify_identifier,
+    format_entry,
+    make_key,
+)
 
 _META_ARXIV = {
     "title": "Attention Is All You Need",
@@ -88,3 +96,51 @@ def test_format_entry_proceedings() -> None:
     out = format_entry(meta, "k")
     assert out.startswith("@inproceedings{k,")
     assert "  booktitle = {NeurIPS 2020}," in out
+
+
+def test_cite_prints_entry_and_returns_0(capsys) -> None:
+    with patch("refscan.cite.resolve_identifier", return_value=_META_JOURNAL):
+        rc = cite_identifiers(["10.1038/s41586-020-2649-2"])
+    assert rc == 0
+    assert "@article{harris2020array," in capsys.readouterr().out
+
+
+def test_cite_not_found_returns_1(capsys) -> None:
+    with patch("refscan.cite.resolve_identifier", return_value={}):
+        rc = cite_identifiers(["10.9999/nope"])
+    assert rc == 1
+    assert "not found" in capsys.readouterr().err
+
+
+def test_cite_unreachable_returns_2_and_wins(capsys) -> None:
+    with patch("refscan.cite.resolve_identifier", side_effect=[{}, None]):
+        rc = cite_identifiers(["10.9999/nope", "10.1234/x"])
+    assert rc == 2
+
+
+def test_cite_unrecognized_identifier_returns_1(capsys) -> None:
+    rc = cite_identifiers(["not an id"])
+    assert rc == 1
+    assert "unrecognized" in capsys.readouterr().err
+
+
+def test_cite_add_appends_to_bib(tmp_path: Path, capsys) -> None:
+    bib = tmp_path / "references.bib"
+    bib.write_text("@article{old2000key,\n  title = {Old},\n}\n")
+    with patch("refscan.cite.resolve_identifier", return_value=_META_JOURNAL):
+        rc = cite_identifiers(["10.1038/s41586-020-2649-2"], bib_path=bib, add=True)
+    assert rc == 0
+    text = bib.read_text()
+    assert "@article{old2000key," in text          # untouched
+    assert "@article{harris2020array," in text     # appended
+
+
+def test_cite_add_dedupes_by_doi(tmp_path: Path, capsys) -> None:
+    bib = tmp_path / "references.bib"
+    bib.write_text("@article{numpy2020,\n  title = {NumPy},\n"
+                   "  doi = {10.1038/S41586-020-2649-2},\n}\n")
+    with patch("refscan.cite.resolve_identifier", return_value=_META_JOURNAL):
+        rc = cite_identifiers(["10.1038/s41586-020-2649-2"], bib_path=bib, add=True)
+    assert rc == 0
+    assert "already in bib as 'numpy2020'" in capsys.readouterr().out
+    assert "harris2020array" not in bib.read_text()

@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import re
 import string
+import sys
 import unicodedata
+from pathlib import Path
+
+from .bib import BibEntry, parse_bib
+from .fetch import DEFAULT_USER_AGENT
 
 _DOI = re.compile(r"^10\.\d{4,9}/\S+$")
 _ARXIV_NEW = re.compile(r"^(\d{4}\.\d{4,5})(v\d+)?$")
@@ -111,3 +116,76 @@ def format_entry(meta: dict, key: str) -> str:
     lines.extend(f"  {name} = {{{val}}}," for name, val in fields)
     lines.append("}")
     return "\n".join(lines)
+
+
+def resolve_identifier(kind: str, ident: str,
+                       user_agent: str = DEFAULT_USER_AGENT) -> dict | None:
+    """Resolve a classified identifier to metadata.
+
+    ``{}`` means not found; ``None`` means the source was unreachable.
+    """
+    from .fetch import arxiv_lookup_by_id, crossref_lookup_by_doi
+    if kind == "arxiv":
+        return arxiv_lookup_by_id(ident, user_agent=user_agent)
+    return crossref_lookup_by_doi(ident, user_agent=user_agent)
+
+
+def _find_existing(entries: list[BibEntry], meta: dict) -> BibEntry | None:
+    """Return the bib entry matching ``meta`` by DOI or arXiv ID, if any."""
+    doi = (meta.get("doi") or "").lower()
+    aid = meta.get("arxiv_id") or ""
+    for e in entries:
+        if doi and e.doi.lower() == doi:
+            return e
+        if aid and e.explicit_arxiv_id == aid:
+            return e
+    return None
+
+
+def cite_identifiers(identifiers: list[str], bib_path: Path | None = None,
+                     add: bool = False,
+                     user_agent: str = DEFAULT_USER_AGENT) -> int:
+    """Resolve identifiers to BibTeX entries; print, optionally append.
+
+    Returns 0 when everything resolved (a dedupe skip counts as success),
+    1 when any identifier was unrecognized/not found, 2 when any source was
+    unreachable (2 wins over 1).
+    """
+    entries = (parse_bib(bib_path)
+               if add and bib_path is not None and bib_path.exists() else [])
+    existing_keys = {e.key for e in entries}
+    worst = 0
+    new_blocks: list[str] = []
+    for raw in identifiers:
+        kind, ident = classify_identifier(raw)
+        if kind == "unknown":
+            print(f"error: unrecognized identifier {raw!r} (expected a DOI like "
+                  "10.1234/abc or an arXiv ID like 2301.12345)", file=sys.stderr)
+            worst = max(worst, 1)
+            continue
+        meta = resolve_identifier(kind, ident, user_agent=user_agent)
+        if meta is None:
+            print(f"error: {raw}: source unreachable (network/API error)",
+                  file=sys.stderr)
+            worst = 2
+            continue
+        if not meta:
+            print(f"error: {raw}: not found", file=sys.stderr)
+            worst = max(worst, 1)
+            continue
+        dup = _find_existing(entries, meta)
+        if dup is not None:
+            print(f"already in bib as '{dup.key}' — skipping {raw}")
+            continue
+        key = make_key(meta, existing_keys)
+        existing_keys.add(key)
+        block = format_entry(meta, key)
+        print(block)
+        new_blocks.append(block)
+    if add and new_blocks and bib_path is not None:
+        with open(bib_path, "a") as fh:
+            for block in new_blocks:
+                fh.write("\n" + block + "\n")
+        n = len(new_blocks)
+        print(f"appended {n} entr{'y' if n == 1 else 'ies'} to {bib_path}")
+    return worst
