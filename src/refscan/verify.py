@@ -27,7 +27,9 @@ from .fetch import (
     OPENALEX_DELAY_S,
     S2_API_KEY_ENV,
     S2_DELAY_S,
+    arxiv_lookup_by_id,
     arxiv_search_metadata,
+    crossref_lookup_by_doi,
     crossref_search_metadata,
     openalex_search_metadata,
     reset_rate_limit_state,
@@ -164,6 +166,41 @@ def find_published_match(candidates: list[APIResult]) -> APIResult | None:
                 and c.doi and not c.doi.lower().startswith(ARXIV_DOI_PREFIX)
                 and c.venue):
             return c
+    return None
+
+
+def lookup_published_version(entry: BibEntry,
+                             user_agent: str = DEFAULT_USER_AGENT) -> APIResult | None:
+    """Targeted published-version lookup for a preprint citation.
+
+    Title-search candidates often miss the published record (or drown it in
+    same-title review/annotation records), so ask arXiv itself: once a
+    preprint is published, its arXiv record usually carries the author-linked
+    published DOI and a ``journal_ref``. The DOI is then resolved via
+    Crossref/OpenAlex for a clean venue name, falling back to the raw
+    ``journal_ref``. The arXiv record must confidently match the entry's
+    title and author — which also guards against a typo'd arXiv ID.
+    """
+    aid = entry.explicit_arxiv_id or entry.fields.get("eprint", "").strip()
+    if not aid:
+        return None
+    rec = arxiv_lookup_by_id(aid, user_agent=user_agent)
+    if not rec:
+        return None
+    arx = _score_candidate(entry, rec, "arxiv")
+    if arx.title_overlap < VERIFIED_TITLE_OVERLAP or not arx.author_match:
+        return None
+    pdoi = rec.get("doi", "")
+    if not pdoi or pdoi.lower().startswith(ARXIV_DOI_PREFIX):
+        return None  # no published DOI linked — still preprint-only
+    meta = crossref_lookup_by_doi(pdoi, user_agent=user_agent)
+    if meta and meta.get("venue"):
+        c = _score_candidate(entry, meta, "crossref")
+        if (c.title_overlap >= VERIFIED_TITLE_OVERLAP and c.author_match
+                and c.doi and not c.doi.lower().startswith(ARXIV_DOI_PREFIX)):
+            return c
+    if arx.venue:  # journal_ref fallback (freeform, but real)
+        return arx
     return None
 
 
@@ -359,9 +396,15 @@ def verify_paper(paper_dir: Path, use_s2: bool = True, refresh: bool = False,
                 c is not None and c.retracted
                 and c.title_overlap >= VERIFIED_TITLE_OVERLAP
                 for c in [best, *others])
-            published = (find_published_match([c for c in [best, *others]
-                                               if c is not None])
-                         if is_preprint_citation(entry) else None)
+            published = None
+            if is_preprint_citation(entry):
+                published = find_published_match(
+                    [c for c in [best, *others] if c is not None])
+                if published is None:
+                    # Candidates missed it — ask arXiv for the linked DOI.
+                    published = lookup_published_version(entry,
+                                                         user_agent=user_agent)
+                    time.sleep(ARXIV_DELAY_S)
             r = VerifyResult(
                 key=entry.key, bib_title=entry.title,
                 bib_first_author=entry.first_author, bib_year=entry.year,

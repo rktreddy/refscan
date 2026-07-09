@@ -521,9 +521,7 @@ def _openalex_work_to_meta(w: dict) -> dict:
                for a in w.get("authorships", []) or []]
     authors = [a for a in authors if a]
     doi = re.sub(r"^https?://doi\.org/", "", w.get("doi") or "", flags=re.IGNORECASE)
-    source = (w.get("primary_location") or {}).get("source") or {}
-    venue = source.get("display_name", "") or ""
-    container_type = "journal" if (w.get("type") == "article" and venue) else ""
+    venue, container_type = _openalex_source_venue(w)
     biblio = w.get("biblio") or {}
     pages = biblio.get("first_page") or ""
     if pages and biblio.get("last_page"):

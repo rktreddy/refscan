@@ -392,3 +392,66 @@ def test_render_report_no_published_section_when_none() -> None:
                             bib_year="2020", bib_pdf_present=False,
                             verdict="verified")]
     assert "Published version available" not in render_verification_md("p", results)
+
+
+_ARXIV_REC = {"title": "Attention Is All You Need",
+              "authors": ["Ashish Vaswani"], "year": "2017",
+              "arxiv_id": "1706.03762", "doi": "10.1000/published.123",
+              "venue": "Journal of Attention 1, 1 (2018)",
+              "container_type": "", "primary_class": "cs.CL"}
+
+_PUBLISHED_META = {"title": "Attention Is All You Need",
+                   "authors": ["Ashish Vaswani"], "year": "2018",
+                   "arxiv_id": "", "doi": "10.1000/published.123",
+                   "venue": "Journal of Attention", "container_type": "journal",
+                   "volume": "", "number": "", "pages": "", "publisher": ""}
+
+
+def test_lookup_published_version_via_arxiv_linked_doi() -> None:
+    from refscan.verify import lookup_published_version
+    e = _preprint_entry(title="Attention Is All You Need")
+    with patch("refscan.verify.arxiv_lookup_by_id",
+               return_value=_ARXIV_REC) as arx, \
+         patch("refscan.verify.crossref_lookup_by_doi",
+               return_value=_PUBLISHED_META):
+        m = lookup_published_version(e)
+    assert arx.call_args[0][0] == "1706.03762"
+    assert m is not None
+    assert m.doi == "10.1000/published.123"
+    assert m.venue == "Journal of Attention"  # clean venue from Crossref
+
+
+def test_lookup_published_version_journal_ref_fallback() -> None:
+    from refscan.verify import lookup_published_version
+    e = _preprint_entry(title="Attention Is All You Need")
+    with patch("refscan.verify.arxiv_lookup_by_id", return_value=_ARXIV_REC), \
+         patch("refscan.verify.crossref_lookup_by_doi", return_value={}):
+        m = lookup_published_version(e)
+    assert m is not None
+    assert m.venue == "Journal of Attention 1, 1 (2018)"  # raw journal_ref
+
+
+def test_lookup_published_version_still_preprint_only() -> None:
+    from refscan.verify import lookup_published_version
+    rec = dict(_ARXIV_REC, doi="", venue="")
+    e = _preprint_entry(title="Attention Is All You Need")
+    with patch("refscan.verify.arxiv_lookup_by_id", return_value=rec):
+        assert lookup_published_version(e) is None
+
+
+def test_lookup_published_version_arxiv_own_doi_rejected() -> None:
+    from refscan.verify import lookup_published_version
+    rec = dict(_ARXIV_REC, doi="10.48550/arXiv.1706.03762", venue="")
+    e = _preprint_entry(title="Attention Is All You Need")
+    with patch("refscan.verify.arxiv_lookup_by_id", return_value=rec):
+        assert lookup_published_version(e) is None
+
+
+def test_lookup_published_version_wrong_title_rejected() -> None:
+    # A typo'd arXiv ID pointing at someone else's paper must not upgrade.
+    from refscan.verify import lookup_published_version
+    rec = dict(_ARXIV_REC, title="A Completely Different Paper About Biology",
+               authors=["Someone Else"])
+    e = _preprint_entry(title="Attention Is All You Need")
+    with patch("refscan.verify.arxiv_lookup_by_id", return_value=rec):
+        assert lookup_published_version(e) is None

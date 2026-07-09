@@ -335,7 +335,7 @@ _OA_WORK = json.dumps({
     "publication_year": 2016,
     "doi": "https://doi.org/10.1109/cvpr.2016.90",
     "type": "article",
-    "primary_location": {"source": {"display_name": "CVPR"}},
+    "primary_location": {"source": {"display_name": "CVPR", "type": "conference"}},
     "biblio": {"volume": "", "issue": "", "first_page": "770", "last_page": "778"},
 }).encode()
 
@@ -358,7 +358,7 @@ def test_crossref_lookup_falls_back_to_openalex() -> None:
         meta = crossref_lookup_by_doi("10.1109/cvpr.2016.90")
     assert meta["authors"] == ["Kaiming He"]
     assert meta["venue"] == "CVPR"
-    assert meta["container_type"] == "journal"
+    assert meta["container_type"] == "proceedings"
     assert meta["pages"] == "770--778"
     assert meta["doi"] == "10.1109/cvpr.2016.90"
 
