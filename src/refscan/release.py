@@ -112,6 +112,48 @@ def _replace_version_in_file(path: Path, current: str, new: str,
     return True
 
 
+def _changelog_section(changelog: Path, version: str) -> str:
+    """Body of the ``## [version]`` CHANGELOG section (empty if absent)."""
+    if not changelog.exists():
+        return ""
+    lines = changelog.read_text().splitlines()
+    body: list[str] = []
+    capturing = False
+    for line in lines:
+        if line.startswith("## ["):
+            if capturing:
+                break
+            capturing = line.startswith(f"## [{version}]")
+            continue
+        if capturing:
+            body.append(line)
+    return "\n".join(body).strip()
+
+
+def _github_release(source_dir: Path, version: str) -> bool:
+    """Create a GitHub Release for ``v{version}`` via ``gh``; never fatal.
+
+    Marketplace-listed Action versions want release pages; this automates
+    them. Returns False (with a warning) when ``gh`` is missing or errors —
+    the release itself already succeeded at this point.
+    """
+    notes = _changelog_section(source_dir / "CHANGELOG.md", version) or (
+        f"See CHANGELOG.md for v{version}.")
+    try:
+        _run(["gh", "release", "create", f"v{version}",
+              "--title", f"v{version}", "--notes", notes, "--verify-tag"],
+             source_dir)
+        return True
+    except FileNotFoundError:
+        print("warning: `gh` not found — skipped creating the GitHub Release "
+              f"(create it manually for v{version} if you want a release page)",
+              file=sys.stderr)
+    except subprocess.CalledProcessError as ex:
+        print(f"warning: `gh release create` failed ({ex}) — the tag is pushed; "
+              "create the GitHub Release manually if needed", file=sys.stderr)
+    return False
+
+
 _PIN_PATTERNS = (r"(rev:\s*)v\d+\.\d+\.\d+", r"(refscan@)v\d+\.\d+\.\d+")
 
 
@@ -211,6 +253,7 @@ def execute(plan: ReleasePlan) -> int:
         if plan.push:
             print("    - git push origin main")
             print(f"    - git push origin v{plan.new_version}")
+            print(f"    - gh release create v{plan.new_version} (notes from CHANGELOG)")
         return 0
 
     # 5. Bump version files
@@ -244,6 +287,8 @@ def execute(plan: ReleasePlan) -> int:
         _run(["git", "push", "origin", "main"], sd)
         _run(["git", "push", "origin", f"v{plan.new_version}"], sd)
         print(f"  pushed v{plan.new_version}")
+        if _github_release(sd, plan.new_version):
+            print(f"  created GitHub Release v{plan.new_version}")
     else:
         print(f"\n  skipped push. To push manually:\n"
               f"    cd {sd}\n"
