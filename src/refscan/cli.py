@@ -429,6 +429,30 @@ def cmd_cite(args: argparse.Namespace) -> int:
     return cite_identifiers(list(args.identifiers), bib_path=bib_path, add=args.add)
 
 
+def cmd_claims(args: argparse.Namespace) -> int:
+    """Offline uncited-claim detector (advisory; always exits 0)."""
+    from .claims import find_uncited_claims, render_claims_md
+
+    paper_dir = Path(args.paper_dir).resolve()
+    layout = resolve_layout(paper_dir, sections=args.sections)
+    _note_autodetect(layout)
+    if not layout.section_files:
+        print("error: no section .tex files found", file=sys.stderr)
+        return 1
+    findings = find_uncited_claims(list(layout.section_files),
+                                   min_score=args.min_score)
+    report = render_claims_md(_paper_label(paper_dir), findings,
+                              min_score=args.min_score, scan_date=_today())
+    out_path = Path(args.out) if args.out else layout.literature_dir / "uncited_claims.md"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(report)
+    print(f"wrote {out_path}")
+    top = f"  |  top score: {findings[0].score}" if findings else ""
+    print(f"  candidate uncited claims (score ≥ {args.min_score}): "
+          f"{len(findings)}{top}")
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Diagnose the refscan environment."""
     from .doctor import render, run_doctor
@@ -755,6 +779,15 @@ def build_parser() -> argparse.ArgumentParser:
     pdoc.add_argument("--no-network", action="store_true",
                       help="skip source reachability probes")
     pdoc.set_defaults(func=cmd_doctor)
+
+    pcl = sub.add_parser(
+        "claims", help="find citation-worthy sentences with no \\cite (offline, advisory)")
+    pcl.add_argument("paper_dir")
+    pcl.add_argument("--sections", help="sections dir, single .tex, or glob")
+    pcl.add_argument("--min-score", type=int, default=2,
+                     help="minimum claim score to report (default: 2)")
+    pcl.add_argument("--out", help="output path (default: paper_dir/literature/uncited_claims.md)")
+    pcl.set_defaults(func=cmd_claims)
 
     return p
 

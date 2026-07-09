@@ -5,6 +5,17 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.0] — 2026-07-09
+
+### Added
+- **`refscan claims <paper_dir> [--sections P] [--min-score N] [--out PATH]`**
+  — offline "citation needed" pass. Citation-aware sentence splitting
+  (`\cite` tracked before LaTeX stripping), weighted claim signals
+  (percentages/multipliers, attribution phrases, comparatives, universals),
+  and an own-result downweight (first person + internal ref) so the paper's
+  contributions aren't flagged. Writes `literature/uncited_claims.md`
+  grouped by section with line numbers. Advisory: exit code always 0.
+
 ## [0.24.0] — 2026-07-09
 
 ### Added

@@ -14,11 +14,12 @@ Stdlib-only at runtime (uses `pdftotext` from poppler for PDF text extraction). 
 
 ## Capabilities
 
-One CLI, fifteen subcommands (full reference in [Commands](#commands)). The highlights:
+One CLI, sixteen subcommands (full reference in [Commands](#commands)). The highlights:
 
 - **`check`** — ⭐ one-shot pre-submission pass: bib sanity + plagiarism scan (+ optional verify) → a single **PASS / WARN / FAIL** verdict; `--html`/`--json`/`--sarif` write shareable or CI-native reports
 - **`verify`** — flag likely-**fabricated**, metadata-drifted, or **retracted** references against arXiv, Semantic Scholar, OpenAlex + Crossref (all fields)
 - **`scan`** / **`semscan`** — match your prose against the papers you cite: exact shingle matching (confidence-ranked) plus semantic paraphrase detection
+- **`claims`** — offline "citation needed" pass: flags sentences with numbers, attribution phrases, or strong claims but no `\cite`
 - **`cite`** — generate a clean BibTeX entry from a DOI or arXiv ID; `--add` appends it to your bib (dedupe-aware)
 - **`fix`** — auto-apply the safe corrections `verify` implies (missing DOIs, drifted years); `--upgrade-preprints` re-points arXiv-preprint citations at their published version; preview by default
 
@@ -30,7 +31,7 @@ Cross-cutting:
 - **Per-paper heuristics** — book/software/suspect-title markers in `refscan.json`
 - **Robust extraction** — mtime-cached `pdftotext`, letter-spacing repair, generic-phrase filtering
 - **Safe & polite** — bib-key path-traversal protection, arXiv/S2 rate-limit etiquette (optional `REFSCAN_S2_API_KEY`)
-- **Stdlib-only runtime**, Python 3.10+, 292 tests, CI on 3.10–3.13
+- **Stdlib-only runtime**, Python 3.10+, 311 tests, CI on 3.10–3.13
 
 ## Install
 
@@ -134,6 +135,9 @@ Generate a clean BibTeX entry from a DOI or arXiv ID and print it to stdout. Acc
 refscan cite 10.1038/s41586-020-2649-2            # print an entry
 refscan cite arXiv:1706.03762 --add --paper-dir . # append to this paper's bib
 ```
+
+### `refscan claims <paper_dir> [--sections P] [--min-score N] [--out PATH]`
+Offline "citation needed" pass. Splits your section files into sentences (citation-aware — `\cite` commands are tracked before LaTeX stripping) and scores each against claim signals: percentages and multipliers ("90\%", "3x faster"), attribution phrases ("prior work has shown", "it is well known", "studies show"), comparatives ("outperforms", "better than"), and universals ("always", "the first to"). Sentences that already carry a citation are skipped, and first-person statements about your own results ("we show in Table 2 that...") are downweighted — contributions don't need citations, claims about the world do. Output: `literature/uncited_claims.md`, grouped by section with line numbers and the signals that fired. **Advisory by design**: findings are suggestions (common-knowledge and covered-nearby cases are expected), so the exit code is always 0 and it never gates `check`. Tune sensitivity with `--min-score` (default 2).
 
 ### `refscan doctor [paper_dir] [--no-network]`
 Environment self-check — run it after installing, or when something doesn't work. Verifies Python version, `pdftotext`, which semantic backend `semscan` would use (including the broken-install case), reachability of the four metadata sources (skip with `--no-network`), and whether the optional env vars are set. Pass a `paper_dir` to also diagnose layout resolution (bib / sections / reference PDFs) for that paper. Exits 1 if anything fails outright; warnings (optional features, offline) don't fail. Fast and side-effect-free — it never downloads models.
@@ -326,7 +330,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-292 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), cite (identifier parsing, key generation, BibTeX formatting, dedupe), the doctor environment checks, verify (verdicts + caching + retraction + published-version detection), bib auto-fix incl. preprint upgrades, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
+311 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, the uncited-claim detector, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), cite (identifier parsing, key generation, BibTeX formatting, dedupe), the doctor environment checks, verify (verdicts + caching + retraction + published-version detection), bib auto-fix incl. preprint upgrades, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 Terminal output is colorized when stdout is a TTY; it stays plain when piped or when `NO_COLOR` is set (and you can force it with `FORCE_COLOR=1`).
 
