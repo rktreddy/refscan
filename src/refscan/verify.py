@@ -41,6 +41,7 @@ from .track import categorize, load_config
 VERIFIED_TITLE_OVERLAP = 0.7
 WEAK_TITLE_OVERLAP = 0.4
 YEAR_DRIFT_TOLERANCE = 1  # years
+ARXIV_DOI_PREFIX = "10.48550/"  # arXiv's own DOIs — not a published venue
 
 
 @dataclass
@@ -56,6 +57,8 @@ class APIResult:
     author_match: bool = False
     year_diff: int | None = None
     retracted: bool = False   # OpenAlex is_retracted on this candidate
+    venue: str = ""           # published venue (journal/proceedings), "" if unknown
+    container_type: str = ""  # "journal" | "proceedings" | ""
 
 
 @dataclass
@@ -71,6 +74,7 @@ class VerifyResult:
     best_match: APIResult | None = None
     other_matches: list[APIResult] = field(default_factory=list)
     retracted: bool = False   # a confident match is flagged retracted by OpenAlex
+    published_match: APIResult | None = None  # published version of a cited preprint
 
 
 def _word_set(text: str) -> set[str]:
@@ -117,7 +121,50 @@ def _score_candidate(entry: BibEntry, candidate: dict, source: str) -> APIResult
         author_match=a_match,
         retracted=bool(candidate.get("retracted", False)),
         year_diff=year_diff,
+        venue=candidate.get("venue", ""),
+        container_type=candidate.get("container_type", ""),
     )
+
+
+def is_preprint_citation(entry: BibEntry) -> bool:
+    """True when ``entry`` cites an arXiv preprint with no published venue.
+
+    arXiv signal: an explicit arXiv ID in any field, or an ``eprint`` field
+    with ``archivePrefix = {arXiv}``. Published signals that disqualify: a
+    non-arXiv DOI (arXiv's own ``10.48550/…`` doesn't count), a ``journal``
+    that isn't the "arXiv preprint …" placeholder, or a ``booktitle``.
+    """
+    f = entry.fields
+    has_arxiv = bool(entry.explicit_arxiv_id) or (
+        "eprint" in f and f.get("archiveprefix", "").strip().lower() == "arxiv")
+    if not has_arxiv:
+        return False
+    doi = entry.doi
+    if doi and not doi.lower().startswith(ARXIV_DOI_PREFIX):
+        return False
+    journal = f.get("journal", "")
+    if journal and "arxiv" not in journal.lower():
+        return False
+    if f.get("booktitle", "").strip():
+        return False
+    return True
+
+
+def find_published_match(candidates: list[APIResult]) -> APIResult | None:
+    """First candidate that confidently identifies a *published* version.
+
+    Restricted to Crossref/OpenAlex (publication-record sources), confident
+    title overlap + author match, a non-arXiv DOI, and a known venue (needed
+    to write a ``journal`` field; also excludes repository-only records).
+    """
+    for c in candidates:
+        if (c.source in ("crossref", "openalex")
+                and c.title_overlap >= VERIFIED_TITLE_OVERLAP
+                and c.author_match
+                and c.doi and not c.doi.lower().startswith(ARXIV_DOI_PREFIX)
+                and c.venue):
+            return c
+    return None
 
 
 def _verdict_from(best: APIResult | None) -> str:
@@ -228,6 +275,8 @@ def _deserialize_result(d: dict) -> VerifyResult:
         best_match=APIResult(**bm) if bm else None,
         other_matches=[APIResult(**x) for x in om],
         retracted=d.get("retracted", False),
+        published_match=(APIResult(**d["published_match"])
+                         if d.get("published_match") else None),
     )
 
 
@@ -310,11 +359,15 @@ def verify_paper(paper_dir: Path, use_s2: bool = True, refresh: bool = False,
                 c is not None and c.retracted
                 and c.title_overlap >= VERIFIED_TITLE_OVERLAP
                 for c in [best, *others])
+            published = (find_published_match([c for c in [best, *others]
+                                               if c is not None])
+                         if is_preprint_citation(entry) else None)
             r = VerifyResult(
                 key=entry.key, bib_title=entry.title,
                 bib_first_author=entry.first_author, bib_year=entry.year,
                 bib_pdf_present=pdf_present, verdict=verdict,
                 best_match=best, other_matches=others, retracted=retracted,
+                published_match=published,
             )
         results.append(r)
         # Don't cache transient API failures — leave them to retry on re-run.
@@ -416,6 +469,21 @@ def render_verification_md(paper_label: str, results: list[VerifyResult],
             doi = r.best_match.doi if r.best_match else ""
             link = f"[{doi}](https://doi.org/{doi})" if doi else "—"
             out.append(f"| `{r.key}` | {r.bib_title[:70]} | {link} |\n")
+        out.append("\n")
+
+    published = [r for r in results if r.published_match]
+    if published:
+        out.append(f"## 📰 Published version available ({len(published)})\n\n")
+        out.append("These entries cite an arXiv preprint, but a published "
+                   "version exists. Consider citing the published version — "
+                   "preview the upgrade with `refscan fix <paper_dir> "
+                   "--upgrade-preprints`, or generate a complete entry (incl. "
+                   "volume/pages) with `refscan cite <doi>`.\n\n")
+        out.append("| Key | Published in | Year | DOI |\n|---|---|---|---|\n")
+        for r in published:
+            pm = r.published_match
+            out.append(f"| `{r.key}` | {pm.venue} | {pm.year} | "
+                       f"[{pm.doi}](https://doi.org/{pm.doi}) |\n")
         out.append("\n")
 
     out.append("## Summary\n\n| Verdict | Count |\n|---|---|\n")

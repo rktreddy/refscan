@@ -15,9 +15,12 @@ from refscan.verify import (
     VerifyResult,
     _author_in,
     _cache_matches,
+    _deserialize_result,
     _score_candidate,
     _title_overlap,
     _verdict_from,
+    find_published_match,
+    is_preprint_citation,
     render_verification_md,
     verify_entry,
     verify_paper,
@@ -287,3 +290,105 @@ def test_render_verification_md_minimal() -> None:
     assert "bad_one" in md
     assert "Not found" in md
     assert "Verified" in md
+
+
+def _preprint_entry(**extra) -> BibEntry:
+    fields = {"title": "Attention Is All You Need",
+              "author": "Vaswani, Ashish",
+              "year": "2017",
+              "journal": "arXiv preprint arXiv:1706.03762"}
+    fields.update(extra)
+    return BibEntry("vaswani2017", "article", fields)
+
+
+def test_is_preprint_citation_journal_form() -> None:
+    assert is_preprint_citation(_preprint_entry()) is True
+
+
+def test_is_preprint_citation_eprint_form() -> None:
+    e = BibEntry("k", "misc", {"title": "T", "author": "A B",
+                               "eprint": "1706.03762",
+                               "archiveprefix": "arXiv"})
+    assert is_preprint_citation(e) is True
+
+
+def test_is_preprint_citation_arxiv_doi_still_counts() -> None:
+    e = _preprint_entry(doi="10.48550/arXiv.1706.03762")
+    assert is_preprint_citation(e) is True
+
+
+def test_is_preprint_citation_published_doi_disqualifies() -> None:
+    e = _preprint_entry(doi="10.1000/real.123")
+    assert is_preprint_citation(e) is False
+
+
+def test_is_preprint_citation_real_journal_disqualifies() -> None:
+    e = _preprint_entry(journal="Advances in Neural Information Processing Systems")
+    assert is_preprint_citation(e) is False
+
+
+def test_is_preprint_citation_booktitle_disqualifies() -> None:
+    e = _preprint_entry(booktitle="NeurIPS 2017")
+    assert is_preprint_citation(e) is False
+
+
+def test_is_preprint_citation_no_arxiv_signal() -> None:
+    e = BibEntry("k", "article", {"title": "T", "journal": "Nature"})
+    assert is_preprint_citation(e) is False
+
+
+def _candidate(source: str, doi: str, venue: str, overlap: float = 0.9,
+               author_match: bool = True) -> APIResult:
+    return APIResult(source=source, title="Attention Is All You Need",
+                     authors=["Ashish Vaswani"], year="2017", doi=doi,
+                     venue=venue, title_overlap=overlap,
+                     author_match=author_match)
+
+
+def test_find_published_match_picks_crossref() -> None:
+    cands = [_candidate("arxiv", "10.48550/arXiv.1706.03762", ""),
+             _candidate("crossref", "10.5555/nips.2017", "NeurIPS")]
+    m = find_published_match(cands)
+    assert m is not None and m.source == "crossref"
+
+
+def test_find_published_match_rejects_arxiv_doi_and_no_venue() -> None:
+    cands = [_candidate("openalex", "10.48550/arXiv.1706.03762", "NeurIPS"),
+             _candidate("crossref", "10.5555/nips.2017", ""),
+             _candidate("s2", "10.5555/nips.2017", "NeurIPS")]
+    assert find_published_match(cands) is None
+
+
+def test_find_published_match_needs_confidence() -> None:
+    cands = [_candidate("crossref", "10.5555/x", "V", overlap=0.5),
+             _candidate("crossref", "10.5555/y", "V", author_match=False)]
+    assert find_published_match(cands) is None
+
+
+def test_deserialize_old_cache_without_published_fields() -> None:
+    old = {"key": "k", "bib_title": "T", "bib_first_author": "A",
+           "bib_year": "2020", "bib_pdf_present": False, "verdict": "verified",
+           "best_match": {"source": "arxiv", "title": "T", "authors": [],
+                          "year": "2020"}}
+    r = _deserialize_result(old)
+    assert r.published_match is None
+    assert r.best_match.venue == ""
+
+
+def test_render_report_published_section() -> None:
+    pm = _candidate("crossref", "10.5555/nips.2017", "NeurIPS")
+    results = [VerifyResult(key="vaswani2017", bib_title="Attention...",
+                            bib_first_author="Vaswani", bib_year="2017",
+                            bib_pdf_present=True, verdict="verified",
+                            published_match=pm)]
+    md = render_verification_md("p", results)
+    assert "Published version available (1)" in md
+    assert "NeurIPS" in md
+    assert "--upgrade-preprints" in md
+
+
+def test_render_report_no_published_section_when_none() -> None:
+    results = [VerifyResult(key="k", bib_title="T", bib_first_author="A",
+                            bib_year="2020", bib_pdf_present=False,
+                            verdict="verified")]
+    assert "Published version available" not in render_verification_md("p", results)
