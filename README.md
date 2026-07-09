@@ -343,7 +343,7 @@ Keep your bibliography honest automatically.
 ```yaml
 repos:
   - repo: https://github.com/rktreddy/refscan
-    rev: v0.24.0            # use the latest release tag
+    rev: v0.25.0            # use the latest release tag
     hooks:
       - id: refscan-sanity        # fast, offline; blocks a commit on bib errors
       # - id: refscan-check       # also runs the plagiarism scan (needs pdftotext)
@@ -352,7 +352,7 @@ repos:
 **GitHub Actions** — refscan ships a composite action; in your paper repo's workflow:
 
 ```yaml
-- uses: rktreddy/refscan@v0.24.0  # use the latest release tag
+- uses: rktreddy/refscan@v0.25.0  # use the latest release tag
   with:
     paper-dir: .
     extra-args: "--verify"        # optional: also check refs against arXiv/S2/OpenAlex/Crossref
