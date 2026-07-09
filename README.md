@@ -55,6 +55,20 @@ Runtime dependency: `pdftotext` (poppler). On macOS: `brew install poppler`. On 
 
 Optional: semantic paraphrase detection (`semscan`) needs an extra embedding backend — install commands in the [`semscan` command section](#commands). Everything else runs on the dependency-free base install.
 
+## Not writing in LaTeX? (Word, Google Docs, reference managers)
+
+The prose-analysis commands (`scan`, `semscan`, `claims`, `watch`, `overlap`) need `.tex` sources — but the **reference-integrity half of refscan is manuscript-format-agnostic**: it reads only your BibTeX file. If you write in Word or Google Docs and manage references with Zotero, Mendeley, or EndNote, export your library as BibTeX and you can still check it:
+
+```bash
+mkdir mypaper && cp ~/Downloads/exported.bib mypaper/references.bib
+refscan verify mypaper      # flag fabricated + retracted references
+refscan fix mypaper         # preview safe metadata corrections
+refscan refstats mypaper    # recency / self-citation balance
+refscan cite 10.1038/...    # generate a clean entry for the next paper
+```
+
+(Zotero: File → Export Library → BibTeX. Mendeley and EndNote have equivalent exports.) Native `.docx` parsing isn't currently planned — if you'd use it, say so in an issue.
+
 ## Expected paper layout
 
 This is the **default** layout; it's configurable (see [Custom paper layouts](#custom-paper-layouts)).
