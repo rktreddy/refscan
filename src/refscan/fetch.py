@@ -361,6 +361,7 @@ def openalex_search_metadata(title: str, author: str = "",
         authors = [a.get("author", {}).get("display_name", "")
                    for a in (w.get("authorships") or []) if a.get("author")]
         authors = [a for a in authors if a]
+        venue, container_type = _openalex_source_venue(w)
         out.append({
             "title": ctitle,
             "authors": authors,
@@ -368,8 +369,29 @@ def openalex_search_metadata(title: str, author: str = "",
             "arxiv_id": "",
             "doi": (w.get("doi") or "").replace("https://doi.org/", ""),
             "retracted": bool(w.get("is_retracted")),
+            "venue": venue,
+            "container_type": container_type,
         })
     return out
+
+
+def _openalex_source_venue(w: dict) -> tuple[str, str]:
+    """(venue, container_type) from an OpenAlex work's primary location.
+
+    Repository sources (arXiv etc.) are *not* published venues — a merged
+    preprint+published work must not report arXiv as its venue — so they
+    yield ("", "").
+    """
+    source = (w.get("primary_location") or {}).get("source") or {}
+    stype = source.get("type", "")
+    name = source.get("display_name", "") or ""
+    if not name or stype == "repository":
+        return "", ""
+    if stype == "journal":
+        return name, "journal"
+    if stype == "conference":
+        return name, "proceedings"
+    return name, ""
 
 
 def openalex_pdf_url(title: str, author: str = "",
@@ -441,14 +463,26 @@ def crossref_search_metadata(title: str, author: str = "",
             if dp and dp[0] and dp[0][0]:
                 year = str(dp[0][0])
                 break
+        containers = it.get("container-title") or []
         out.append({
             "title": titles[0] if titles else "",
             "authors": authors,
             "year": year,
             "arxiv_id": "",
             "doi": it.get("DOI", "") or "",
+            "venue": containers[0] if containers else "",
+            "container_type": _crossref_container_type(it.get("type", "")),
         })
     return out
+
+
+def _crossref_container_type(cr_type: str) -> str:
+    """Map a Crossref work type to refscan's container_type vocabulary."""
+    if cr_type == "journal-article":
+        return "journal"
+    if cr_type == "proceedings-article":
+        return "proceedings"
+    return ""
 
 
 def _crossref_item_to_meta(it: dict) -> dict:
@@ -465,12 +499,6 @@ def _crossref_item_to_meta(it: dict) -> dict:
         if dp and dp[0] and dp[0][0]:
             year = str(dp[0][0])
             break
-    cr_type = it.get("type", "")
-    container_type = ""
-    if cr_type == "journal-article":
-        container_type = "journal"
-    elif cr_type == "proceedings-article":
-        container_type = "proceedings"
     containers = it.get("container-title") or []
     return {
         "title": titles[0] if titles else "",
@@ -479,7 +507,7 @@ def _crossref_item_to_meta(it: dict) -> dict:
         "arxiv_id": "",
         "doi": it.get("DOI", "") or "",
         "venue": containers[0] if containers else "",
-        "container_type": container_type,
+        "container_type": _crossref_container_type(it.get("type", "")),
         "volume": it.get("volume", "") or "",
         "number": it.get("issue", "") or "",
         "pages": it.get("page", "") or "",

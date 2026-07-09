@@ -371,3 +371,48 @@ def test_crossref_lookup_not_found_both() -> None:
 def test_crossref_lookup_request_failure() -> None:
     with patch("refscan.fetch._http_get", side_effect=[(None, None), (None, None)]):
         assert crossref_lookup_by_doi("10.1109/cvpr.2016.90") is None
+
+
+def test_openalex_search_includes_published_venue() -> None:
+    payload = json.dumps({"results": [{
+        "title": "Neural Ordinary Differential Equations",
+        "publication_year": 2018,
+        "authorships": [{"author": {"display_name": "Ricky T. Q. Chen"}}],
+        "doi": "https://doi.org/10.5555/abc",
+        "primary_location": {"source": {"display_name": "NeurIPS",
+                                        "type": "conference"}},
+    }]}).encode()
+    with patch("refscan.fetch._http_get", return_value=(payload, 200)):
+        out = openalex_search_metadata("Neural Ordinary Differential Equations")
+    assert out[0]["venue"] == "NeurIPS"
+    assert out[0]["container_type"] == "proceedings"
+
+
+def test_openalex_search_repository_source_is_not_a_venue() -> None:
+    payload = json.dumps({"results": [{
+        "title": "Some Preprint",
+        "publication_year": 2024,
+        "authorships": [],
+        "doi": "https://doi.org/10.48550/arXiv.2401.00001",
+        "primary_location": {"source": {"display_name": "arXiv (Cornell University)",
+                                        "type": "repository"}},
+    }]}).encode()
+    with patch("refscan.fetch._http_get", return_value=(payload, 200)):
+        out = openalex_search_metadata("Some Preprint")
+    assert out[0]["venue"] == ""
+    assert out[0]["container_type"] == ""
+
+
+def test_crossref_search_includes_published_venue() -> None:
+    payload = json.dumps({"message": {"items": [{
+        "title": ["Array programming with NumPy"],
+        "author": [{"given": "Charles", "family": "Harris"}],
+        "issued": {"date-parts": [[2020]]},
+        "type": "journal-article",
+        "container-title": ["Nature"],
+        "DOI": "10.1038/s41586-020-2649-2",
+    }]}}).encode()
+    with patch("refscan.fetch._http_get", return_value=(payload, 200)):
+        out = crossref_search_metadata("Array programming with NumPy")
+    assert out[0]["venue"] == "Nature"
+    assert out[0]["container_type"] == "journal"
