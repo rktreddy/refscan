@@ -36,27 +36,53 @@ class BibFix:
 
 
 def compute_fixes(entries: list[BibEntry],
-                  results_by_key: dict[str, VerifyResult]) -> list[BibFix]:
-    """Derive safe field corrections from verify results, matched by bib key."""
-    fixes: list[BibFix] = []
+                  results_by_key: dict[str, VerifyResult],
+                  upgrade_preprints: bool = False) -> list[BibFix]:
+    """Derive safe field corrections from verify results, matched by bib key.
+
+    With ``upgrade_preprints``, entries whose verify result carries a
+    ``published_match`` (a cited arXiv preprint that has since been published)
+    additionally get their DOI, journal, year — and, for ``@misc`` entries,
+    the entry type — pointed at the published version. Upgrade fixes supersede
+    the standard doi/year fixes for the same entry.
+    """
+    fixes: dict[tuple[str, str], BibFix] = {}
     for e in entries:
         r = results_by_key.get(e.key)
-        if r is None or r.best_match is None:
+        if r is None:
             continue
         bm = r.best_match
-        if bm.title_overlap < VERIFIED_TITLE_OVERLAP:
-            continue  # only confident matches
-        if bm.doi and not e.doi:
-            fixes.append(BibFix(e.key, "doi", "", bm.doi, bm.source, "add missing DOI"))
-        # Year fixes only from publication-year sources. arXiv/S2 report the
-        # *preprint* submission year, which is legitimately a year before the
-        # conference/journal year a bib usually cites — "correcting" toward it
-        # would corrupt a correct entry. Crossref/OpenAlex give the published year.
-        if (bm.year and e.year and bm.year != e.year and bm.author_match
-                and bm.source in ("crossref", "openalex")):
-            fixes.append(BibFix(e.key, "year", e.year, bm.year, bm.source,
-                                "year disagrees with published record"))
-    return fixes
+        if bm is not None and bm.title_overlap >= VERIFIED_TITLE_OVERLAP:
+            if bm.doi and not e.doi:
+                fixes[e.key, "doi"] = BibFix(e.key, "doi", "", bm.doi, bm.source,
+                                             "add missing DOI")
+            # Year fixes only from publication-year sources. arXiv/S2 report the
+            # *preprint* submission year, which is legitimately a year before the
+            # conference/journal year a bib usually cites — "correcting" toward it
+            # would corrupt a correct entry. Crossref/OpenAlex give the published year.
+            if (bm.year and e.year and bm.year != e.year and bm.author_match
+                    and bm.source in ("crossref", "openalex")):
+                fixes[e.key, "year"] = BibFix(e.key, "year", e.year, bm.year,
+                                              bm.source,
+                                              "year disagrees with published record")
+        pm = r.published_match
+        if upgrade_preprints and pm is not None:
+            if pm.doi and pm.doi.lower() != e.doi.lower():
+                fixes[e.key, "doi"] = BibFix(e.key, "doi", e.doi, pm.doi,
+                                             pm.source, "published version DOI")
+            old_journal = e.fields.get("journal", "")
+            if pm.venue and pm.venue != old_journal:
+                fixes[e.key, "journal"] = BibFix(e.key, "journal", old_journal,
+                                                 pm.venue, pm.source,
+                                                 "published venue")
+            if pm.year and pm.year != e.year:
+                fixes[e.key, "year"] = BibFix(e.key, "year", e.year, pm.year,
+                                              pm.source, "publication year")
+            if e.entry_type == "misc":
+                fixes[e.key, "entry-type"] = BibFix(e.key, "entry-type", "misc",
+                                                    "article", pm.source,
+                                                    "upgrade preprint to article")
+    return list(fixes.values())
 
 
 def _find_entry(text: str, key: str) -> tuple[int, int] | None:
@@ -82,13 +108,15 @@ def _find_entry(text: str, key: str) -> tuple[int, int] | None:
 
 def _apply_to_entry(text: str, key: str, fixes: list[BibFix]) -> str:
     """Apply ``fixes`` to ``key``'s entry within ``text``; return new text."""
+    field_fixes = [f for f in fixes if f.field != "entry-type"]
+    type_fix = next((f for f in fixes if f.field == "entry-type"), None)
     span = _find_entry(text, key)
     if span is None:
         return text
     fields_start, close_idx = span
     body = text[fields_start:close_idx]
     to_insert: list[BibFix] = []
-    for f in fixes:
+    for f in field_fixes:
         pat = re.compile(r"(\b" + re.escape(f.field) + r"\s*=\s*)"
                          r"(\{[^{}]*\}|\"[^\"]*\"|\d+)", re.IGNORECASE)
         if pat.search(body):
@@ -96,7 +124,12 @@ def _apply_to_entry(text: str, key: str, fixes: list[BibFix]) -> str:
         else:
             to_insert.append(f)
     insertion = "".join(f"\n  {f.field} = {{{f.new}}}," for f in to_insert)
-    return text[:fields_start] + insertion + body + text[close_idx:]
+    text = text[:fields_start] + insertion + body + text[close_idx:]
+    if type_fix is not None:
+        # Rewrite this entry's @type{key, header (position-independent).
+        text = re.sub(r"@\w+(\s*\{\s*" + re.escape(key) + r"\s*,)",
+                      "@" + type_fix.new + r"\1", text, count=1)
+    return text
 
 
 def apply_fixes(bib_path: Path, fixes: list[BibFix]) -> int:

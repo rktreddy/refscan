@@ -138,3 +138,84 @@ def test_cli_fix_apply_writes_and_backs_up(tmp_path: Path) -> None:
     assert e.year == "2016"
     assert e.doi == "10.1109/CVPR.2016.90"
     assert (paper / "paper" / "references.bib.bak").exists()
+
+
+# --- preprint upgrades ----------------------------------------------------
+
+def _preprint_result(key: str) -> VerifyResult:
+    pm = APIResult(source="crossref", title="t", authors=["a"], year="2018",
+                   doi="10.5555/nips.2017", venue="NeurIPS",
+                   title_overlap=0.9, author_match=True)
+    bm = APIResult(source="arxiv", title="t", authors=["a"], year="2017",
+                   doi="10.48550/arXiv.1706.03762", title_overlap=0.95,
+                   author_match=True)
+    return VerifyResult(key=key, bib_title="t", bib_first_author="a",
+                        bib_year="2017", bib_pdf_present=False,
+                        verdict="verified", best_match=bm, published_match=pm)
+
+
+def _preprint_bib_entry(key: str = "k", entry_type: str = "misc") -> BibEntry:
+    return BibEntry(key, entry_type, {
+        "title": "T", "author": "A", "year": "2017",
+        "eprint": "1706.03762", "archiveprefix": "arXiv",
+        "doi": "10.48550/arXiv.1706.03762",
+    })
+
+
+def test_upgrade_off_by_default_no_upgrade_fixes() -> None:
+    e = _preprint_bib_entry()
+    fixes = compute_fixes([e], {"k": _preprint_result("k")})
+    assert all(f.field not in ("journal", "entry-type") for f in fixes)
+
+
+def test_upgrade_emits_doi_journal_year_type() -> None:
+    e = _preprint_bib_entry()
+    fixes = compute_fixes([e], {"k": _preprint_result("k")},
+                          upgrade_preprints=True)
+    by_field = {f.field: f for f in fixes}
+    assert by_field["doi"].new == "10.5555/nips.2017"
+    assert by_field["doi"].old == "10.48550/arXiv.1706.03762"
+    assert by_field["journal"].new == "NeurIPS"
+    assert by_field["year"].new == "2018"
+    assert by_field["entry-type"].old == "misc"
+    assert by_field["entry-type"].new == "article"
+
+
+def test_upgrade_supersedes_standard_doi_fix() -> None:
+    # entry with no DOI: standard logic would add best_match's arXiv DOI,
+    # the upgrade must win with the published DOI.
+    e = BibEntry("k", "misc", {"title": "T", "author": "A", "year": "2017",
+                               "eprint": "1706.03762", "archiveprefix": "arXiv"})
+    fixes = compute_fixes([e], {"k": _preprint_result("k")},
+                          upgrade_preprints=True)
+    dois = [f for f in fixes if f.field == "doi"]
+    assert len(dois) == 1 and dois[0].new == "10.5555/nips.2017"
+
+
+def test_upgrade_keeps_non_misc_entry_type() -> None:
+    e = _preprint_bib_entry(entry_type="article")
+    fixes = compute_fixes([e], {"k": _preprint_result("k")},
+                          upgrade_preprints=True)
+    assert all(f.field != "entry-type" for f in fixes)
+
+
+def test_apply_entry_type_rewrite(tmp_path: Path) -> None:
+    bib = tmp_path / "references.bib"
+    bib.write_text(
+        "@misc{k,\n"
+        "  title = {T},\n"
+        "  author = {A},\n"
+        "  year = {2017},\n"
+        "  eprint = {1706.03762},\n"
+        "}\n\n"
+        "@misc{other,\n  title = {Other},\n}\n")
+    fixes = [BibFix("k", "entry-type", "misc", "article", "crossref", "upgrade"),
+             BibFix("k", "journal", "", "NeurIPS", "crossref", "venue"),
+             BibFix("k", "year", "2017", "2018", "crossref", "pub year")]
+    apply_fixes(bib, fixes)
+    text = bib.read_text()
+    assert "@article{k," in text
+    assert "@misc{other," in text            # untouched neighbor
+    assert "journal = {NeurIPS}" in text
+    assert "year = {2018}" in text
+    assert "eprint = {1706.03762}" in text   # eprint preserved

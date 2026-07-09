@@ -137,3 +137,55 @@ def test_bump_readme_pins_idempotent(tmp_path: Path) -> None:
 
 def test_bump_readme_pins_missing_file(tmp_path: Path) -> None:
     assert _bump_readme_pins(tmp_path / "README.md", "0.23.0") is False
+
+
+_CHANGELOG = """# Changelog
+
+## [0.24.0] — 2026-07-09
+
+### Added
+- Feature A.
+- Feature B.
+
+## [0.23.0] — 2026-07-08
+
+### Added
+- Old stuff.
+"""
+
+
+def test_changelog_section_mid_file(tmp_path: Path) -> None:
+    from refscan.release import _changelog_section
+    p = tmp_path / "CHANGELOG.md"
+    p.write_text(_CHANGELOG)
+    body = _changelog_section(p, "0.24.0")
+    assert "Feature A." in body and "Feature B." in body
+    assert "Old stuff." not in body
+
+
+def test_changelog_section_last(tmp_path: Path) -> None:
+    from refscan.release import _changelog_section
+    p = tmp_path / "CHANGELOG.md"
+    p.write_text(_CHANGELOG)
+    assert "Old stuff." in _changelog_section(p, "0.23.0")
+
+
+def test_github_release_invokes_gh(tmp_path: Path) -> None:
+    from unittest.mock import patch as _patch
+
+    from refscan.release import _github_release
+    (tmp_path / "CHANGELOG.md").write_text(_CHANGELOG)
+    with _patch("refscan.release._run") as run:
+        assert _github_release(tmp_path, "0.24.0") is True
+    cmd = run.call_args[0][0]
+    assert cmd[:3] == ["gh", "release", "create"]
+    assert "v0.24.0" in cmd
+
+
+def test_github_release_survives_missing_gh(tmp_path: Path) -> None:
+    from unittest.mock import patch as _patch
+
+    from refscan.release import _github_release
+    (tmp_path / "CHANGELOG.md").write_text(_CHANGELOG)
+    with _patch("refscan.release._run", side_effect=FileNotFoundError("gh")):
+        assert _github_release(tmp_path, "0.24.0") is False

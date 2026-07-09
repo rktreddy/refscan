@@ -20,7 +20,7 @@ One CLI, fifteen subcommands (full reference in [Commands](#commands)). The high
 - **`verify`** — flag likely-**fabricated**, metadata-drifted, or **retracted** references against arXiv, Semantic Scholar, OpenAlex + Crossref (all fields)
 - **`scan`** / **`semscan`** — match your prose against the papers you cite: exact shingle matching (confidence-ranked) plus semantic paraphrase detection
 - **`cite`** — generate a clean BibTeX entry from a DOI or arXiv ID; `--add` appends it to your bib (dedupe-aware)
-- **`fix`** — auto-apply the safe corrections `verify` implies (missing DOIs, drifted years); preview by default
+- **`fix`** — auto-apply the safe corrections `verify` implies (missing DOIs, drifted years); `--upgrade-preprints` re-points arXiv-preprint citations at their published version; preview by default
 
 Plus the supporting commands: **`fetch`** (download cited PDFs), **`doctor`** (environment self-check), **`init`**, **`track`**, **`sanity-stats`**, **`refstats`**, **`watch`**, **`overlap`**, and the maintainer-only **`release`**.
 
@@ -30,7 +30,7 @@ Cross-cutting:
 - **Per-paper heuristics** — book/software/suspect-title markers in `refscan.json`
 - **Robust extraction** — mtime-cached `pdftotext`, letter-spacing repair, generic-phrase filtering
 - **Safe & polite** — bib-key path-traversal protection, arXiv/S2 rate-limit etiquette (optional `REFSCAN_S2_API_KEY`)
-- **Stdlib-only runtime**, Python 3.10+, 262 tests, CI on 3.10–3.13
+- **Stdlib-only runtime**, Python 3.10+, 292 tests, CI on 3.10–3.13
 
 ## Install
 
@@ -210,7 +210,7 @@ The first run downloads a small model. `semscan` is slower than `scan`, so it's 
 > **model2vec is the recommended backend** — lighter, no torch, and works everywhere. The `sentence-transformers` backend needs a recent PyTorch (≥ 2.4); on **Intel macOS** PyTorch is capped at 2.2.2, so use model2vec there.
 
 ### `refscan verify <paper_dir> [--no-s2] [--refresh] [--out PATH]`
-Check each bib entry against arXiv, Semantic Scholar, OpenAlex, and Crossref — together they cover preprints, journals, proceedings, and books across all fields, so real non-arXiv papers are rarely false-flagged. **Retracted papers** (via OpenAlex) get a dedicated 🚨 section, and `check --verify` treats them as a FAIL. Verdicts per entry: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (lookup failed — *not* treated as fabricated). Output: `literature/verification_report.md`. Results are cached keyed by title/author/year, so a corrected entry re-checks automatically without `--refresh`; `api-error` results are never cached.
+Check each bib entry against arXiv, Semantic Scholar, OpenAlex, and Crossref — together they cover preprints, journals, proceedings, and books across all fields, so real non-arXiv papers are rarely false-flagged. **Retracted papers** (via OpenAlex) get a dedicated 🚨 section, and `check --verify` treats them as a FAIL. Verdicts per entry: **verified**, **metadata-drift** (right paper, wrong author/year), **weak-match**, **not-found** (likely fabricated), **skipped** (book/software/no-title), or **api-error** (lookup failed — *not* treated as fabricated). Entries citing an arXiv preprint whose **published version now exists** (found via the arXiv record's author-linked DOI) get an advisory 📰 section listing venue, year, and DOI — apply the upgrade with `fix --upgrade-preprints`. Output: `literature/verification_report.md`. Results are cached keyed by title/author/year, so a corrected entry re-checks automatically without `--refresh`; `api-error` results are never cached.
 
 **API keys & etiquette:** none required — OpenAlex + Crossref work anonymously and keep `verify`/`fetch` working across fields. Two optional env vars improve coverage: a contact email joins the polite pools and enables **Unpaywall** (refscan ships **no default email** and skips Unpaywall without one), and a free [Semantic Scholar key](https://www.semanticscholar.org/product/api) avoids S2's aggressive unauthenticated throttling:
 
@@ -219,8 +219,10 @@ export REFSCAN_CONTACT_EMAIL=you@example.com
 export REFSCAN_S2_API_KEY=<your-key>
 ```
 
-### `refscan fix <paper_dir> [--apply] [--no-s2] [--refresh]`
+### `refscan fix <paper_dir> [--apply] [--upgrade-preprints] [--no-s2] [--refresh]`
 Closes the loop on `verify`: applies the safe corrections that verify's matches imply. For each entry whose best match is **confident** (high title overlap), it **adds a missing DOI** and **corrects a drifted year** (only when the author also matches). Titles and author lists are never rewritten — too easy to clobber a correct entry with an API variant.
+
+With **`--upgrade-preprints`**, entries that cite an arXiv preprint whose published version verify found are additionally re-pointed at it: DOI → published DOI, `journal` → the venue, year → publication year, and `@misc` entries become `@article`. The `eprint`/`archivePrefix` fields are kept (citing both is standard). Volume/pages aren't available from this pass — `refscan cite <doi>` generates a complete entry when you want one.
 
 Safe by default: it **previews** the proposed edits and changes nothing. Re-run with `--apply` to write them — a `references.bib.bak` backup is made first, and surrounding formatting is preserved.
 
@@ -233,7 +235,7 @@ proposed fixes (2):
 ```
 
 ### `refscan release {patch|minor|major|X.Y.Z} [--push] [--no-test] [--dry-run]` (maintainer-only)
-For shipping new versions of refscan itself. Validates environment, runs tests, bumps version in `pyproject.toml` and `__init__.py` in lockstep (plus this README's pre-commit/action version pins), commits, tags `v{new_version}`, and (with `--push`) pushes to `origin`. Requires editable install + clean working tree on `main` + a CHANGELOG section pre-written for the new version. Use `--dry-run` to preview.
+For shipping new versions of refscan itself. Validates environment, runs tests, bumps version in `pyproject.toml` and `__init__.py` in lockstep (plus this README's pre-commit/action version pins), commits, tags `v{new_version}`, and (with `--push`) pushes to `origin` and creates a GitHub Release with the CHANGELOG section as notes (needs `gh`; skipped gracefully without it). Requires editable install + clean working tree on `main` + a CHANGELOG section pre-written for the new version. Use `--dry-run` to preview.
 
 ## User guide — a pre-submission pass
 
@@ -324,7 +326,7 @@ pip install -e ".[dev]"      # or: uv pip install -e ".[dev]"
 pytest
 ```
 
-262 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), cite (identifier parsing, key generation, BibTeX formatting, dedupe), the doctor environment checks, verify (verdicts + caching + retraction), bib auto-fix, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
+292 tests covering bib parsing and path-safety, text processing, shingle/scan logic, semantic-scan matching, fetch + the source chain (arXiv/S2/OpenAlex/Crossref/Unpaywall), cite (identifier parsing, key generation, BibTeX formatting, dedupe), the doctor environment checks, verify (verdicts + caching + retraction + published-version detection), bib auto-fix incl. preprint upgrades, sanity checks, reference-balance stats, tracking/config, layout resolution + auto-detection, the `check` verdict + HTML/JSON/SARIF reports, color output, cross-paper overlap, and the release flow. Lint with `ruff check`.
 
 Terminal output is colorized when stdout is a TTY; it stays plain when piped or when `NO_COLOR` is set (and you can force it with `FORCE_COLOR=1`).
 

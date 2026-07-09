@@ -302,7 +302,8 @@ def cmd_fix(args: argparse.Namespace) -> int:
     results = verify_paper(paper_dir=paper_dir, use_s2=not args.no_s2,
                            refresh=args.refresh, bib=args.bib, progress=True)
     entries = _parse_bib(layout.bib)
-    fixes = compute_fixes(entries, {r.key: r for r in results})
+    fixes = compute_fixes(entries, {r.key: r for r in results},
+                          upgrade_preprints=args.upgrade_preprints)
 
     if not fixes:
         print("\nno safe metadata fixes found (DOIs present, years agree).")
@@ -312,6 +313,9 @@ def cmd_fix(args: argparse.Namespace) -> int:
     for f in fixes:
         print(f"  {f.key}: {f.field}  {f.old or '(none)'} → {f.new}"
               f"   [{f.source}: {f.reason}]")
+    if args.upgrade_preprints and any(f.field == "journal" for f in fixes):
+        print("\n  note: volume/pages aren't available from title search — "
+              "for a complete published entry, run `refscan cite <doi>`.")
 
     if not args.apply:
         print("\n(preview only — re-run with --apply to write these; "
@@ -651,6 +655,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="skip Semantic Scholar (arXiv + OpenAlex + Crossref only)")
     pfx.add_argument("--refresh", action="store_true",
                      help="ignore cached verify results and re-query APIs")
+    pfx.add_argument("--upgrade-preprints", action="store_true",
+                     help="also upgrade arXiv-preprint citations whose published "
+                          "version verify found (DOI, journal, year, @misc→@article)")
     pfx.set_defaults(func=cmd_fix)
 
     prs = sub.add_parser("refstats",

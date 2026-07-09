@@ -14,8 +14,8 @@ separate paper-writing system and do not apply here.
 - `track` — categorize references → `reference_tracking.md`
 - `scan` — exact shingle-match prose vs references (confidence-scored)
 - `semscan` — semantic/near-duplicate scan (optional backends; paraphrase)
-- `verify` — check entries vs arXiv/S2/OpenAlex/Crossref; flags fabricated + retracted
-- `fix` — apply safe bib metadata corrections (DOIs, drifted years); preview unless `--apply`
+- `verify` — check entries vs arXiv/S2/OpenAlex/Crossref; flags fabricated + retracted + published-version-available (📰, advisory)
+- `fix` — apply safe bib metadata corrections (DOIs, drifted years); `--upgrade-preprints` re-points preprint citations at the published version; preview unless `--apply`
 - `sanity-stats` — bib hygiene (CI exit code)
 - `refstats` — reference-balance stats (recency, self-citation)
 - `check` — ⭐ one-shot sanity+scan(+verify) → PASS/WARN/FAIL; `--html/--json/--sarif`
