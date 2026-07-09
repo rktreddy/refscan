@@ -5,6 +5,29 @@ All notable changes to refscan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.24.0] — 2026-07-09
+
+### Added
+- **Preprint→published detection in `verify`.** Entries citing an arXiv
+  preprint whose published version now exists get an advisory
+  "📰 Published version available" report section (venue, year, DOI).
+  Detection first checks the title-search candidates, then asks arXiv
+  directly — the arXiv record's author-linked DOI is resolved via
+  Crossref/OpenAlex for a clean venue (with `journal_ref` as fallback).
+  Advisory only: never affects the verdict or `check`'s PASS/FAIL.
+- **`refscan fix --upgrade-preprints`** applies the upgrade: DOI → published
+  DOI, `journal` → the venue, year → publication year, and `@misc` entries
+  become `@article`; `eprint`/`archivePrefix` are kept. All existing rails
+  (preview default, `--apply`, `.bak` backup) apply; without the flag,
+  behavior is unchanged.
+- **`refscan release --push` now creates a GitHub Release** via `gh`, with
+  the version's CHANGELOG section as notes (skipped with a warning when `gh`
+  is unavailable).
+
+### Fixed
+- OpenAlex repository sources (arXiv) are no longer reported as a published
+  venue by DOI lookups (`_openalex_work_to_meta`).
+
 ## [0.23.0] — 2026-07-08
 
 ### Added
